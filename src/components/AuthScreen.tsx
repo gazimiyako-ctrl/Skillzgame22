@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { 
   Phone, 
@@ -23,6 +23,14 @@ export const AuthScreen: React.FC = () => {
   const [password, setPassword] = useState<string>('');
   const [confirmPassword, setConfirmPassword] = useState<string>('');
   const [refCode, setRefCode] = useState<string>('');
+
+  // Auto-fill the referral code when a player opens the app from a shared
+  // referral link such as ?ref=LX123456.
+  useEffect(() => {
+    const code = new URLSearchParams(window.location.search).get('ref');
+    if (code) setRefCode(code.trim().toUpperCase());
+  }, []);
+
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState<boolean>(false);
   const [showForgetModal, setShowForgetModal] = useState<boolean>(false);

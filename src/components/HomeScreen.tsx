@@ -132,19 +132,32 @@ export const HomeScreen: React.FC = () => {
             {detailTab==='prizes' ? (
               <div className="mt-3 rounded-[20px] bg-[#111827] p-4">
                 <div className="mb-2 text-[10px] font-black tracking-wide text-slate-500">TOURNAMENT PLAYERS</div>
-                {(selectedTournament.entries || []).map((e:any)=>(
-                  <div key={e.userId} className="flex items-center gap-3 border-b border-white/5 py-3 last:border-0">
-                    <div className="h-10 w-10 shrink-0 overflow-hidden rounded-full bg-purple-900/70 flex items-center justify-center text-sm font-black text-white">
-                      {(e.avatarUrl||e.profilePhoto||e.photoUrl) ? <img src={e.avatarUrl||e.profilePhoto||e.photoUrl} className="h-full w-full object-cover" /> : <span>{String(e.username||'P').slice(0,1).toUpperCase()}</span>}
+                {Array.from({ length: Math.max(0, Number(selectedTournament.maxPlayers || 0)) }, (_, i) => {
+                  const e = (selectedTournament.entries || [])[i];
+                  const slot = i + 1;
+                  return e ? (
+                    <div key={`player-${e.userId || slot}`} className="flex items-center gap-3 border-b border-white/5 py-3 last:border-0">
+                      <div className="h-10 w-10 shrink-0 overflow-hidden rounded-full bg-purple-900/70 flex items-center justify-center text-sm font-black text-white">
+                        {(e.avatarUrl||e.profilePhoto||e.photoUrl) ? <img src={e.avatarUrl||e.profilePhoto||e.photoUrl} className="h-full w-full object-cover" /> : <span>{String(e.username||'P').slice(0,1).toUpperCase()}</span>}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-black text-white truncate">{e.rank===1?'🥇':e.rank===2?'🥈':e.rank===3?'🥉':`${slot}.`} {e.username}</div>
+                        <div className="text-[9px] text-slate-500">ID: {e.userId}</div>
+                      </div>
+                      <div className="text-right"><div className="text-[9px] text-slate-500">PRIZE</div><b className="text-sm text-amber-300">৳{Number(e.prize||0).toFixed(0)}</b></div>
                     </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="text-sm font-black text-white truncate">{e.rank===1?'🥇':e.rank===2?'🥈':e.rank===3?'🥉':`${e.rank}.`} {e.username}</div>
-                      <div className="text-[9px] text-slate-500">ID: {e.userId}</div>
+                  ) : (
+                    <div key={`empty-${slot}`} className="flex items-center gap-3 border-b border-white/5 py-3 last:border-0">
+                      <div className="h-10 w-10 shrink-0 rounded-full border border-dashed border-slate-700 bg-[#0b1220] flex items-center justify-center text-xs font-black text-slate-600">{slot}</div>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-bold text-slate-600">খালি Player Slot</div>
+                        <div className="text-[9px] text-slate-700">Player-এর জন্য অপেক্ষা করছে</div>
+                      </div>
+                      <div className="text-right"><div className="text-[9px] text-slate-700">STATUS</div><b className="text-[10px] text-slate-600">EMPTY</b></div>
                     </div>
-                    <div className="text-right"><div className="text-[9px] text-slate-500">PRIZE</div><b className="text-sm text-amber-300">৳{Number(e.prize||0).toFixed(0)}</b></div>
-                  </div>
-                ))}
-                {(selectedTournament.entries || []).length===0 && <div className="py-5 text-center text-xs text-slate-500">এখনও কোনো Player অংশ নেয়নি।</div>}
+                  );
+                })}
+                {Number(selectedTournament.maxPlayers || 0) === 0 && <div className="py-5 text-center text-xs text-slate-500">Admin এখনো Player Limit সেট করেনি।</div>}
               </div>
             ) : (
               <div className="mt-3 rounded-[20px] bg-[#111827] p-4 text-sm leading-6 text-slate-300">

@@ -15,10 +15,49 @@ export const ReferModal: React.FC = () => {
 
   if (activeModal !== 'refer') return null;
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(user.referralCode);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const getReferralLink = () => {
+    const code = String(user.referralCode || '').trim();
+    return `${window.location.origin}${window.location.pathname}?ref=${encodeURIComponent(code)}`;
+  };
+
+  const handleCopyCode = async () => {
+    try {
+      await navigator.clipboard.writeText(user.referralCode);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      alert('রেফারেল কোড কপি করা যায়নি।');
+    }
+  };
+
+  const handleCopyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(getReferralLink());
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      alert('রেফারেল লিংক কপি করা যায়নি।');
+    }
+  };
+
+  const handleShare = async () => {
+    const link = getReferralLink();
+    const text = `Skill Game-এ যোগ দিন! আমার Referral Code: ${user.referralCode}`;
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: 'Skill Game — Refer & Earn', text, url: link });
+        return;
+      } catch (err: any) {
+        if (err?.name === 'AbortError') return;
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(`${text}\n${link}`);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      window.open(`https://wa.me/?text=${encodeURIComponent(`${text}\n${link}`)}`, '_blank');
+    }
   };
 
   return (
@@ -66,15 +105,35 @@ export const ReferModal: React.FC = () => {
           <div className="text-2xl font-black font-mono tracking-widest text-emerald-400 my-1">
             {user.referralCode}
           </div>
-          <button
-            id="copy-refer-code-btn"
-            type="button"
-            onClick={handleCopy}
-            className="mt-2 inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-1.5 rounded-lg shadow active:scale-95 transition-all"
-          >
-            {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-            <span>{copied ? 'কোড কপি হয়েছে!' : 'কোড কপি করুন'}</span>
-          </button>
+          <div className="mt-2 flex items-center justify-center gap-2 flex-wrap">
+            <button
+              id="copy-refer-code-btn"
+              type="button"
+              onClick={handleCopyCode}
+              className="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-1.5 rounded-lg shadow active:scale-95 transition-all"
+            >
+              {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+              <span>{copied ? 'কপি হয়েছে!' : 'কোড কপি করুন'}</span>
+            </button>
+            <button
+              id="copy-refer-link-btn"
+              type="button"
+              onClick={handleCopyLink}
+              className="inline-flex items-center gap-1.5 bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold px-4 py-1.5 rounded-lg shadow active:scale-95 transition-all"
+            >
+              <Copy className="w-3.5 h-3.5" />
+              <span>লিংক কপি</span>
+            </button>
+            <button
+              id="share-refer-link-btn"
+              type="button"
+              onClick={handleShare}
+              className="inline-flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-4 py-1.5 rounded-lg shadow active:scale-95 transition-all"
+            >
+              <Share2 className="w-3.5 h-3.5" />
+              <span>শেয়ার করুন</span>
+            </button>
+          </div>
         </div>
 
         {/* Stats */}

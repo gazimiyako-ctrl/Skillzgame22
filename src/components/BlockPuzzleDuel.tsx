@@ -447,6 +447,10 @@ export const BlockPuzzleDuel: React.FC = () => {
     }
 
     setActiveMatchId(res.matchId || `bp_${Date.now()}`);
+    // Immediately refresh paid-match history so a newly entered unfinished
+    // match appears as PENDING in the player's history without waiting for
+    // the next polling cycle.
+    await refreshBlockPuzzleMatches();
     setRecoveredMatch(null);
     setServerGameStartedAt(res.gameStartedAt || res.startsAt || null);
     setMatchSeed(Number(res.gameSeed) || Date.now());

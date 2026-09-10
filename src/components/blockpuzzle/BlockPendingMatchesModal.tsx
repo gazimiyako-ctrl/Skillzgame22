@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Clock, Trophy, CheckCircle, XCircle, ArrowRight, ShieldCheck, X } from 'lucide-react';
 
 export interface PendingMatchItem {
@@ -28,6 +28,12 @@ export const BlockPendingMatchesModal: React.FC<BlockPendingMatchesModalProps> =
   onClose,
   onRefresh,
 }) => {
+  // Always re-read the server when this modal opens. This prevents an older
+  // empty local list from hiding a paid match that is already PENDING/PLAYING.
+  useEffect(() => {
+    void onRefresh();
+  }, [onRefresh]);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in select-none">
       <div className="bg-[#0e162f] border-2 border-indigo-500/60 rounded-3xl p-5 max-w-md w-full shadow-2xl space-y-4 text-left relative overflow-hidden">
