@@ -1,4 +1,4 @@
-name: Install Skillzgame Project
+name: Install Latest Skillzgame Project
 
 on:
   workflow_dispatch:
@@ -18,15 +18,20 @@ jobs:
 
       - name: Extract latest project
         run: |
-          ZIP="Skillzgame-v22-Payment-Methods-Admin-Controls-FINAL.zip"
+          ZIP="Skillzgame-v22-Tournament-Player-Slots-Scroll-FINAL.zip"
+
+          if [ ! -f "$ZIP" ]; then
+            echo "ZIP file not found: $ZIP"
+            exit 1
+          fi
 
           mkdir -p /tmp/skillz
           unzip -q -o "$ZIP" -d /tmp/skillz
 
           ROOT="/tmp/skillz"
 
-          if [ -d "$ROOT/Skillzgame-v22-Payment-Methods-Admin-Controls-FINAL" ]; then
-            ROOT="$ROOT/Skillzgame-v22-Payment-Methods-Admin-Controls-FINAL"
+          if [ -d "$ROOT/Skillzgame-v22-Tournament-Player-Slots-Scroll-FINAL" ]; then
+            ROOT="$ROOT/Skillzgame-v22-Tournament-Player-Slots-Scroll-FINAL"
           fi
 
           find . -mindepth 1 -maxdepth 1 \
@@ -38,11 +43,16 @@ jobs:
 
           rm -f "$ZIP"
 
-      - name: Commit corrected structure
+      - name: Commit latest project
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           git add -A
-          git diff --cached --quiet || git commit -m "Install complete Skillzgame project"
-          git push
+
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "Install latest Skillzgame project"
+            git push
+          fi
