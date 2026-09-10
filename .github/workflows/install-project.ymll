@@ -1,0 +1,58 @@
+name: Install Latest Skillzgame Project
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  install:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract latest project
+        run: |
+          ZIP="Skillzgame-v22-Tournament-Player-Slots-Scroll-FINAL.zip"
+
+          if [ ! -f "$ZIP" ]; then
+            echo "ZIP file not found: $ZIP"
+            exit 1
+          fi
+
+          mkdir -p /tmp/skillz
+          unzip -q -o "$ZIP" -d /tmp/skillz
+
+          ROOT="/tmp/skillz"
+
+          if [ -d "$ROOT/Skillzgame-v22-Tournament-Player-Slots-Scroll-FINAL" ]; then
+            ROOT="$ROOT/Skillzgame-v22-Tournament-Player-Slots-Scroll-FINAL"
+          fi
+
+          find . -mindepth 1 -maxdepth 1 \
+            ! -name ".git" \
+            ! -name ".github" \
+            -exec rm -rf {} +
+
+          cp -a "$ROOT"/. .
+
+          rm -f "$ZIP"
+
+      - name: Commit latest project
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add -A
+
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "Install latest Skillzgame project"
+            git push
+          fi
