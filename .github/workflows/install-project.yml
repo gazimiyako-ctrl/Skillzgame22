@@ -18,7 +18,7 @@ jobs:
 
       - name: Extract latest project
         run: |
-          ZIP="Skillzgame-v26-Multiplayer-ProMatch-3-5-7-10.zip
+          ZIP="Skillzgame-v26-Multiplayer-ProMatch-3-5-7-10.zip"
 
           if [ ! -f "$ZIP" ]; then
             echo "ZIP file not found: $ZIP"
@@ -30,8 +30,8 @@ jobs:
 
           ROOT="/tmp/skillz"
 
-          if [ -d "$ROOT/Skillzgame-v26-Multiplayer-ProMatch-3-5-7-10.zip" ]; then
-            ROOT="$ROOT/Skillzgame-v26-Multiplayer-ProMatch-3-5-7-10.zip"
+          if [ -d "$ROOT/Skillzgame-v26-Multiplayer-ProMatch-3-5-7-10" ]; then
+            ROOT="$ROOT/Skillzgame-v26-Multiplayer-ProMatch-3-5-7-10"
           fi
 
           find . -mindepth 1 -maxdepth 1 \
@@ -53,6 +53,6 @@ jobs:
           if git diff --cached --quiet; then
             echo "No changes to commit."
           else
-            git commit -m "Install latest Skillzgame project"
+            git commit -m "Install Multiplayer Pro Match project"
             git push
           fi
