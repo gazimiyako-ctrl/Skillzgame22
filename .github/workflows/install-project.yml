@@ -18,7 +18,7 @@ jobs:
 
       - name: Extract latest project
         run: |
-          ZIP="Skillzgame-v22-Tournament-Player-Slots-Scroll-FINAL.zip"
+          ZIP="Skillzgame-v26-Multiplayer-ProMatch-3-5-7-10.zip
 
           if [ ! -f "$ZIP" ]; then
             echo "ZIP file not found: $ZIP"
@@ -30,8 +30,8 @@ jobs:
 
           ROOT="/tmp/skillz"
 
-          if [ -d "$ROOT/Skillzgame-v22-Tournament-Player-Slots-Scroll-FINAL" ]; then
-            ROOT="$ROOT/Skillzgame-v22-Tournament-Player-Slots-Scroll-FINAL"
+          if [ -d "$ROOT/Skillzgame-v26-Multiplayer-ProMatch-3-5-7-10.zip" ]; then
+            ROOT="$ROOT/Skillzgame-v26-Multiplayer-ProMatch-3-5-7-10.zip"
           fi
 
           find . -mindepth 1 -maxdepth 1 \
