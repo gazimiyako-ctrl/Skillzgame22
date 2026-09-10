@@ -65,7 +65,8 @@ export const BlockPuzzleDuel: React.FC = () => {
     getMyBlockPuzzleMatches,
     getBlockPuzzleMatchStatus,
     submitBlockPuzzleResult,
-    resultSubmissions
+    resultSubmissions,
+    paymentSettings
 
   } = useApp();
 
@@ -81,6 +82,7 @@ export const BlockPuzzleDuel: React.FC = () => {
   const [tournamentId, setTournamentId] = useState<string>('');
   const [tournamentData, setTournamentData] = useState<any | null>(null);
   const [tournamentLoading, setTournamentLoading] = useState(false);
+  const [multiplayerProConfig, setMultiplayerProConfig] = useState<any | null>(null);
 
 
   // Modals
@@ -176,6 +178,7 @@ export const BlockPuzzleDuel: React.FC = () => {
   const activePendingCount = pendingMatches.filter(m => m.status === 'PENDING').length;
   useEffect(() => {
     let alive = true;
+    try { const raw = sessionStorage.getItem('skillz_multiplayer_pro_config'); if (raw) setMultiplayerProConfig(JSON.parse(raw)); } catch {}
     const boot = async () => {
       const storedTournamentId = sessionStorage.getItem('skillz_tournament_id') || '';
       const storedMatchId = sessionStorage.getItem('skillz_tournament_match_id') || '';
@@ -357,12 +360,14 @@ export const BlockPuzzleDuel: React.FC = () => {
           if (msg.type === 'STATE') {
             if (msg.opponent) {
               setMatchedOpponent(prev => ({ ...(prev || { name: 'Opponent', score: 0 }), score: Number(msg.opponent.score || 0), linesCleared: Number(msg.opponent.linesCleared || 0) }));
+              setOpponentLiveBoard(normalizeLiveBoard(msg.opponent.board));
             }
             if (msg.self) liveMoveIndexRef.current = Number(msg.self.moveIndex || 0);
           } else if (msg.type === 'MOVE_ACCEPTED' && msg.userId !== user.id) {
             const mover = msg.moverState;
             if (mover) {
               setMatchedOpponent(prev => ({ ...(prev || { name: 'Opponent', score: 0 }), score: Number(mover.score || msg.score || 0), linesCleared: Number(mover.linesCleared || msg.linesCleared || 0) }));
+              setOpponentLiveBoard(normalizeLiveBoard(mover.board));
             }
           }
         } catch {}
@@ -438,25 +443,25 @@ export const BlockPuzzleDuel: React.FC = () => {
     setEntryFee(fee);
     setPrize(winPrize);
     setGameMode('duel');
+    setMatchedOpponent(undefined);
+    setServerGameStartedAt(null);
+    setRecoveredMatch(null);
+    setScreenState('matchmaking');
 
-    // Deduct entry fee from wallet via AppContext
-    const res = await startBlockPuzzleMatch(fee, winPrize);
+    const cfg = multiplayerProConfig;
+    const res = await startBlockPuzzleMatch(cfg ? Number(cfg.entryFee) : fee, cfg ? Number(cfg.prizeAmount) : winPrize, cfg ? Number(cfg.players) : 2);
     if (!res.success) {
       alert(res.message);
+      setScreenState('lobby');
       return;
     }
 
     setActiveMatchId(res.matchId || `bp_${Date.now()}`);
-    // Immediately refresh paid-match history so a newly entered unfinished
-    // match appears as PENDING in the player's history without waiting for
-    // the next polling cycle.
     await refreshBlockPuzzleMatches();
-    setRecoveredMatch(null);
     setServerGameStartedAt(res.gameStartedAt || res.startsAt || null);
-    setMatchSeed(Number(res.gameSeed) || Date.now());
-    // Every paid match starts after 3 seconds even when no opponent exists.
-    // A late joiner uses the existing server game clock instead of restarting it.
-    startCountdown('duel', res.gameStartedAt || res.startsAt || undefined, Number(res.gameSeed) || null);
+    if (Number.isFinite(Number(res.gameSeed))) setMatchSeed(Number(res.gameSeed));
+    // Pro Match starts immediately. The opponent may join later within the
+    // 3-hour matchmaking window; their own 3-minute attempt is independent.
   };
 
   // Start Practice Mode (Free)
@@ -956,6 +961,8 @@ export const BlockPuzzleDuel: React.FC = () => {
           matchesPlayed={matchesPlayed}
           userBalance={user?.gamingBalance || 0}
           pendingMatchesCount={activePendingCount}
+          proMatchFees={paymentSettings.proMatchFees}
+          multiplayerProConfig={multiplayerProConfig}
           isAdmin={Boolean(user?.isAdmin)}
           onStartDuel={handleStartDuel}
           onStartPractice={handleStartPractice}
@@ -965,7 +972,7 @@ export const BlockPuzzleDuel: React.FC = () => {
           onOpenProfile={() => setShowProfile(true)}
           onOpenRules={() => setShowRules(true)}
           onOpenAndroidCode={() => setShowAndroidCode(true)}
-          onBackToHome={() => setCurrentTab('home')}
+          onBackToHome={() => { sessionStorage.removeItem('skillz_multiplayer_pro_config'); setMultiplayerProConfig(null); setCurrentTab('home'); }}
           onGoToWallet={() => setCurrentTab('wallet')}
           isMuted={isMuted}
           onToggleMute={handleToggleMute}

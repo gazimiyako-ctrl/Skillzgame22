@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   Swords, 
   Target, 
@@ -30,14 +30,13 @@ export interface EntryFeeOption {
   label: string;
 }
 
-export const ENTRY_FEE_OPTIONS: EntryFeeOption[] = [
-  { fee: 20, prize: 35, label: '৳২০ (উইন ৳৩৫)' },
-  { fee: 30, prize: 50, label: '৳৩০ (উইন ৳৫০)' },
-  { fee: 60, prize: 100, label: '৳৬০ (উইন ৳১০০)' },
-  { fee: 120, prize: 200, label: '৳১২০ (উইন ৳২০০)' },
-  { fee: 250, prize: 420, label: '৳২৫০ (উইন ৳৪২০)' },
-  { fee: 500, prize: 850, label: '৳৫০০ (উইন ৳৮৫০)' },
-];
+const DEFAULT_PRO_MATCH_FEES = [20, 30, 60, 120, 250, 500];
+const PRO_MATCH_PRIZES = [35, 50, 100, 200, 420, 850];
+export const ENTRY_FEE_OPTIONS: EntryFeeOption[] = DEFAULT_PRO_MATCH_FEES.map((fee, i) => ({ fee, prize: PRO_MATCH_PRIZES[i], label: `৳${fee} (উইন ৳${PRO_MATCH_PRIZES[i]})` }));
+export const getProMatchEntryFeeOptions = (fees?: number[]): EntryFeeOption[] => {
+  const safeFees = Array.isArray(fees) && fees.length === 6 && fees.every(n => Number.isFinite(Number(n)) && Number(n) > 0) ? fees.map(Number) : DEFAULT_PRO_MATCH_FEES;
+  return safeFees.map((fee, i) => ({ fee, prize: PRO_MATCH_PRIZES[i], label: `৳${fee} (উইন ৳${PRO_MATCH_PRIZES[i]})` }));
+};
 
 interface BlockLobbyViewProps {
   userRating: number;
@@ -46,6 +45,8 @@ interface BlockLobbyViewProps {
   matchesPlayed: number;
   userBalance: number;
   pendingMatchesCount: number;
+  proMatchFees?: number[];
+  multiplayerProConfig?: { players: number; entryFee: number; prizeAmount: number; name?: string } | null;
   isAdmin?: boolean;
   onStartDuel: (entryFee: number, prize: number) => void;
   onStartPractice: (difficulty: PracticeDifficulty) => void;
@@ -68,6 +69,8 @@ export const BlockLobbyView: React.FC<BlockLobbyViewProps> = ({
   matchesPlayed,
   userBalance,
   pendingMatchesCount,
+  proMatchFees,
+  multiplayerProConfig,
   isAdmin = false,
   onStartDuel,
   onStartPractice,
@@ -82,11 +85,15 @@ export const BlockLobbyView: React.FC<BlockLobbyViewProps> = ({
   isMuted,
   onToggleMute,
 }) => {
-  const [selectedFee, setSelectedFee] = useState<EntryFeeOption>(ENTRY_FEE_OPTIONS[0]); // Default ৳20
+  const entryFeeOptions = multiplayerProConfig ? [{ fee: Number(multiplayerProConfig.entryFee), prize: Number(multiplayerProConfig.prizeAmount), label: `৳${Number(multiplayerProConfig.entryFee)} (উইন ৳${Number(multiplayerProConfig.prizeAmount)})` }] : getProMatchEntryFeeOptions(proMatchFees);
+  const [selectedFee, setSelectedFee] = useState<EntryFeeOption>(entryFeeOptions[0]);
+  useEffect(() => { setSelectedFee(prev => entryFeeOptions.find(opt => opt.fee === prev.fee) || entryFeeOptions[0]); }, [proMatchFees, multiplayerProConfig?.entryFee, multiplayerProConfig?.prizeAmount]);
   const [selectedDifficulty, setSelectedDifficulty] = useState<PracticeDifficulty>('normal');
 
   return (
     <div className="pb-24 pt-2 px-3 max-w-md mx-auto space-y-3.5 select-none">
+      {multiplayerProConfig && <div className="rounded-2xl border border-cyan-500/40 bg-cyan-500/10 p-3"><div className="text-[10px] font-black text-cyan-300">MULTIPLAYER PRO MATCH</div><div className="mt-1 text-base font-black text-white">{multiplayerProConfig.name || `${multiplayerProConfig.players} Players Pro Match`}</div><div className="mt-1 text-[10px] text-slate-400">{multiplayerProConfig.players} জন • Entry ৳{multiplayerProConfig.entryFee} • Winner ৳{multiplayerProConfig.prizeAmount}</div></div>}
+
       {/* Top App Bar */}
       <div className="flex items-center justify-between bg-[#0e162f] px-3.5 py-2.5 rounded-2xl border border-indigo-900/80 shadow-lg">
         <button
@@ -304,14 +311,14 @@ export const BlockLobbyView: React.FC<BlockLobbyViewProps> = ({
         {/* Entry Fee Options Selector */}
         <div className="space-y-2">
           <div className="flex items-center justify-between text-[11px] font-bold text-slate-300 px-1">
-            <span>এন্ট্রি ফি সিলেক্ট করুন:</span>
+            <span>{multiplayerProConfig ? `${multiplayerProConfig.players} Player Match` : 'এন্ট্রি ফি সিলেক্ট করুন:'}</span>
             <span className="text-amber-400 font-mono">
               উইন প্রাইজ: ৳{selectedFee.prize}
             </span>
           </div>
 
           <div className="grid grid-cols-2 gap-2">
-            {ENTRY_FEE_OPTIONS.map((opt) => {
+            {entryFeeOptions.map((opt) => {
               const isSelected = selectedFee.fee === opt.fee;
               return (
                 <button
@@ -348,7 +355,7 @@ export const BlockLobbyView: React.FC<BlockLobbyViewProps> = ({
           className="w-full py-3.5 bg-gradient-to-r from-amber-400 via-amber-500 to-yellow-500 hover:from-amber-300 hover:to-yellow-400 text-slate-950 font-black text-sm rounded-xl shadow-xl flex items-center justify-center gap-2 active:scale-95 transition-transform"
         >
           <Play className="w-4 h-4 fill-current" />
-          <span>ম্যাচ শুরু করুন (এন্ট্রি ৳{selectedFee.fee} ➔ উইন ৳{selectedFee.prize})</span>
+          <span>{multiplayerProConfig ? `${multiplayerProConfig.players} জনের ম্যাচে Join করুন` : `ম্যাচ শুরু করুন (এন্ট্রি ৳${selectedFee.fee} ➔ উইন ৳${selectedFee.prize})`}</span>
         </button>
       </div>
 

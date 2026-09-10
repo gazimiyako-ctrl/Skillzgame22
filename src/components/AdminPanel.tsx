@@ -55,6 +55,7 @@ export const AdminPanel: React.FC = () => {
     refreshUsers,
     adjustUserBalance,
     toggleUserBan,
+    deleteUser,
     resetUserPassword,
     paymentSettings,
     updatePaymentSettings,
@@ -74,7 +75,7 @@ export const AdminPanel: React.FC = () => {
   const [selectedAdminTournament, setSelectedAdminTournament] = useState<any | null>(null);
   const [showTournamentModal, setShowTournamentModal] = useState(false);
   const [editingTournament, setEditingTournament] = useState<any|null>(null);
-  const emptyTournament = { name:'Block Puzzle Tournament', entryFee:100, maxPlayers:50, prizePool:4000, prizes:[2000,1200,800], active:true, showOnHome:true, displayOrder:1 };
+  const emptyTournament = { name:'Block Puzzle Tournament', entryFee:100, maxPlayers:50, prizePool:4000, prizes:[2000,1200,800], endMode:'PLAYER_LIMIT', durationMinutes:180, active:true, showOnHome:true, displayOrder:1 };
   const [tournamentForm, setTournamentForm] = useState<any>(emptyTournament);
   const [lbName, setLbName] = useState('Block Puzzle 3-Day Leaderboard');
   const [lbWinPoints, setLbWinPoints] = useState(10);
@@ -792,7 +793,7 @@ export const AdminPanel: React.FC = () => {
           </div>
         )}
 
-        {activeAdminTab === 'tournaments' && (<div className="space-y-4 max-w-5xl"><div className="flex items-center justify-between"><div><h2 className="text-lg font-black text-white">Block Puzzle Tournament</h2><p className="text-xs text-slate-400 mt-1">একই Block Puzzle game ব্যবহার করে Tournament পরিচালনা করুন।</p></div><button onClick={openNewTournament} className="bg-amber-500 text-slate-950 font-black px-4 py-2.5 rounded-xl text-xs flex items-center gap-2"><Plus className="w-4 h-4"/> নতুন Tournament</button></div>{tournaments.map((t:any)=><div key={t.id} className="bg-[#121935] border border-indigo-900/60 rounded-2xl p-4"><div className="flex items-start justify-between gap-3"><button onClick={()=>setSelectedAdminTournament(t)} className="min-w-0 text-left"><h3 className="font-black text-white">🏆 {t.name}</h3><p className="text-xs text-slate-300 mt-1">Entry ৳{t.entryFee} • Max {t.maxPlayers} • Prize Pool ৳{t.prizePool}</p><p className="text-[11px] text-slate-400 mt-1">Tournament-এ ঢুকে Player ও Prize Review করতে tap করুন</p><p className="text-xs text-cyan-300 mt-1">Unique Registered: {t.playerCount}/{t.maxPlayers} • {t.status==='ENDED'?'ENDED':t.full?'FULL — Last Player Submit অপেক্ষায়':'ACTIVE'}</p></button><div className="flex gap-1.5 shrink-0"><button onClick={()=>openEditTournament(t)} className="p-2 rounded-lg bg-indigo-900/60 text-cyan-300"><Settings className="w-4 h-4"/></button><button onClick={()=>toggleTournament(t)} className={`px-2.5 py-1.5 rounded-lg text-[10px] font-black ${t.status==='ACTIVE'?'bg-emerald-500/15 text-emerald-400':'bg-slate-700 text-slate-300'}`}>{t.status==='ACTIVE'?'ACTIVE':'INACTIVE'}</button></div></div><div className="mt-3 flex gap-2 flex-wrap">{(t.prizes||[]).map((p:number,i:number)=><span key={i} className="text-[11px] bg-amber-500/10 text-amber-300 border border-amber-500/20 rounded-lg px-2 py-1">#{i+1} ৳{p}</span>)}{t.status==='ENDED' && <span className={`text-[11px] rounded-lg px-2 py-1 border ${t.payoutStatus==='PENDING_APPROVAL'?'bg-amber-500/10 text-amber-300 border-amber-500/20':'bg-emerald-500/10 text-emerald-300 border-emerald-500/20'}`}>{t.payoutStatus==='PENDING_APPROVAL'?'Prize Approval Pending':'Prize Review Complete'}</span>}</div></div>)}{tournaments.length===0&&<div className="bg-[#121935] p-8 rounded-2xl border border-indigo-900/60 text-center text-sm text-slate-500">কোনো Tournament নেই।</div>}</div>)}
+        {activeAdminTab === 'tournaments' && (<div className="space-y-4 max-w-5xl"><div className="flex items-center justify-between"><div><h2 className="text-lg font-black text-white">Block Puzzle Tournament</h2><p className="text-xs text-slate-400 mt-1">একই Block Puzzle game ব্যবহার করে Tournament পরিচালনা করুন।</p><p className="text-[11px] text-emerald-400 mt-1 font-bold">মোট {tournaments.length}টি Tournament • কোনো Tournament সংখ্যা সীমা নেই</p></div><button onClick={openNewTournament} className="bg-amber-500 text-slate-950 font-black px-4 py-2.5 rounded-xl text-xs flex items-center gap-2"><Plus className="w-4 h-4"/> নতুন Tournament</button></div>{tournaments.map((t:any)=><div key={t.id} className="bg-[#121935] border border-indigo-900/60 rounded-2xl p-4"><div className="flex items-start justify-between gap-3"><button onClick={()=>setSelectedAdminTournament(t)} className="min-w-0 text-left"><h3 className="font-black text-white">🏆 {t.name}</h3><p className="text-xs text-slate-300 mt-1">Entry ৳{t.entryFee} • Max {t.maxPlayers} • Prize Pool ৳{t.prizePool}</p><p className="text-[11px] text-cyan-300 mt-1">শেষের নিয়ম: {t.endMode==='TIME' ? `সময় অনুযায়ী • ${t.durationMinutes||0} মিনিট` : 'Player সংখ্যা অনুযায়ী • Full হলে শেষ'}</p><p className="text-[11px] text-slate-400 mt-1">Tournament-এ ঢুকে Player ও Prize Review করতে tap করুন</p><p className="text-xs text-cyan-300 mt-1">Unique Registered: {t.playerCount}/{t.maxPlayers} • {t.status==='ENDED'?'ENDED':t.full?'FULL — Last Player Submit অপেক্ষায়':'ACTIVE'}</p></button><div className="flex gap-1.5 shrink-0"><button onClick={()=>openEditTournament(t)} className="p-2 rounded-lg bg-indigo-900/60 text-cyan-300"><Settings className="w-4 h-4"/></button><button onClick={()=>toggleTournament(t)} className={`px-2.5 py-1.5 rounded-lg text-[10px] font-black ${t.status==='ACTIVE'?'bg-emerald-500/15 text-emerald-400':'bg-slate-700 text-slate-300'}`}>{t.status==='ACTIVE'?'ACTIVE':'INACTIVE'}</button></div></div><div className="mt-3 flex gap-2 flex-wrap">{(t.prizes||[]).map((p:number,i:number)=><span key={i} className="text-[11px] bg-amber-500/10 text-amber-300 border border-amber-500/20 rounded-lg px-2 py-1">#{i+1} ৳{p}</span>)}{t.status==='ENDED' && <span className={`text-[11px] rounded-lg px-2 py-1 border ${t.payoutStatus==='PENDING_APPROVAL'?'bg-amber-500/10 text-amber-300 border-amber-500/20':'bg-emerald-500/10 text-emerald-300 border-emerald-500/20'}`}>{t.payoutStatus==='PENDING_APPROVAL'?'Prize Approval Pending':'Prize Review Complete'}</span>}</div></div>)}{tournaments.length===0&&<div className="bg-[#121935] p-8 rounded-2xl border border-indigo-900/60 text-center text-sm text-slate-500">কোনো Tournament নেই।</div>}</div>)}
 
         {activeAdminTab === 'leaderboard' && (
           <div className="space-y-4">
@@ -943,7 +944,7 @@ export const AdminPanel: React.FC = () => {
                 depositRequests.map(req => (
                   <div
                     key={req.id}
-                    className={`bg-[#121935] border rounded-2xl p-4 shadow-lg flex flex-wrap items-center justify-between gap-3 ${
+                    className={`bg-[#121935] border rounded-2xl p-4 shadow-lg flex flex-nowrap items-center justify-between gap-4 overflow-x-auto ${
                       req.status === 'PENDING'
                         ? 'border-emerald-500/40'
                         : req.status === 'APPROVED'
@@ -1033,7 +1034,7 @@ export const AdminPanel: React.FC = () => {
                 withdrawRequests.map(req => (
                   <div
                     key={req.id}
-                    className={`bg-[#121935] border rounded-2xl p-4 shadow-lg flex flex-wrap items-center justify-between gap-3 ${
+                    className={`bg-[#121935] border rounded-2xl p-4 shadow-lg flex flex-nowrap items-center justify-between gap-4 overflow-x-auto ${
                       req.status === 'PENDING'
                         ? 'border-amber-500/40'
                         : req.status === 'APPROVED'
@@ -1108,14 +1109,14 @@ export const AdminPanel: React.FC = () => {
         {/* ================= 6. USERS MANAGEMENT TAB ================= */}
         {activeAdminTab === 'users' && (
           <div className="space-y-4">
-            <div className="bg-[#121935] p-4 rounded-2xl border border-indigo-900/60 flex flex-wrap items-center justify-between gap-3">
+            <div className="bg-[#121935] p-4 rounded-2xl border border-indigo-900/60 flex flex-wrap items-center justify-between gap-3 sticky top-[105px] z-20 shadow-xl">
               <div>
                 <h2 className="text-base font-bold text-white flex items-center gap-2">
                   <Users className="w-5 h-5 text-blue-400" />
                   <span>রেজিস্টার্ড ব্যবহারকারী তালিকা</span>
                 </h2>
                 <p className="text-xs text-slate-400">
-                  ব্যালেন্স যোগ/কর্তন করুন এবং প্রয়োজনে সন্দেহভাজন ইউজার ব্যান করুন।
+                  ব্যালেন্স যোগ/কর্তন, পাসওয়ার্ড রিসেট, ব্যান এবং প্রয়োজন হলে পুরোনো একাউন্ট সম্পূর্ণ ডিলিট করুন।
                 </p>
               </div>
 
@@ -1136,11 +1137,11 @@ export const AdminPanel: React.FC = () => {
               {filteredUsers.map(u => (
                 <div
                   key={u.id}
-                  className={`bg-[#121935] border rounded-2xl p-4 shadow-lg flex flex-wrap items-center justify-between gap-3 ${
+                  className={`bg-[#121935] border rounded-2xl p-4 shadow-lg flex flex-nowrap items-center justify-between gap-4 overflow-x-auto ${
                     u.isBanned ? 'border-red-600/50 bg-red-950/20' : 'border-indigo-900/60'
                   }`}
                 >
-                  <div className="space-y-1">
+                  <div className="space-y-1 min-w-[230px] shrink-0">
                     <div className="flex items-center gap-2">
                       <span className="font-bold text-white text-sm">{u.name}</span>
                       <span className="text-xs text-slate-400 font-mono">({u.phone})</span>
@@ -1164,7 +1165,7 @@ export const AdminPanel: React.FC = () => {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 shrink-0 whitespace-nowrap">
                       <button
                         onClick={() => {
                           setAdjustingUser(u);
@@ -1200,6 +1201,19 @@ export const AdminPanel: React.FC = () => {
                       >
                         {u.isBanned ? 'আনব্যান' : 'ব্যান'}
                       </button>
+
+                      {!u.isAdmin && (
+                        <button
+                          onClick={async () => {
+                            if (!window.confirm(`“${u.name}” (${u.phone}) একাউন্টটি সম্পূর্ণভাবে ডিলিট করবেন?\n\nএই কাজটি আর Undo করা যাবে না।`)) return;
+                            const res = await deleteUser(u.id);
+                            showToast(res.message, res.success ? 'success' : 'error');
+                          }}
+                          className="bg-red-950 hover:bg-red-900 text-red-300 border border-red-800 px-3 py-1.5 rounded-xl text-xs font-bold"
+                        >
+                          ডিলিট
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1354,6 +1368,38 @@ export const AdminPanel: React.FC = () => {
               </div>
 
               <h3 className="text-sm font-bold text-amber-400 border-b border-indigo-950 pb-2 pt-2">
+                Pro Match Entry Fee সেটিংস
+              </h3>
+              <div className="bg-[#0b1022] border border-indigo-900 rounded-xl p-3">
+                <p className="text-[10px] text-slate-500 mb-2">Pro Match-এর ৬টি Entry Fee আপনি এখান থেকে যেকোনো positive amount দিতে পারবেন। Prize payout আগের মতোই থাকবে।</p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {(settingsForm.proMatchFees || [20,30,60,120,250,500]).map((fee:number, i:number) => (
+                    <div key={i}>
+                      <label className="block text-[10px] text-slate-400 mb-1">Option #{i+1} Entry Fee ৳</label>
+                      <input type="number" min="0.01" step="0.01" value={fee} onChange={e => { const fees = [...(settingsForm.proMatchFees || [20,30,60,120,250,500])]; fees[i] = Number(e.target.value); setSettingsForm({...settingsForm, proMatchFees: fees}); }} className="w-full bg-[#080d1b] border border-indigo-800 rounded-xl px-3 py-2 text-xs text-white" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <h3 className="text-sm font-bold text-cyan-400 border-b border-indigo-950 pb-2 pt-2">
+                Multiplayer Pro Match — Player Count
+              </h3>
+              <div className="bg-[#0b1022] border border-cyan-900/70 rounded-xl p-3 space-y-2">
+                <p className="text-[10px] text-slate-500">3, 5, 7 অথবা 10 জনের Pro Match আলাদাভাবে Active/Inactive করুন। Active + Home ON হলে শুধু সেই Match Home Screen-এ দেখাবে। Match পূর্ণ হলে সব Player একই ম্যাচে খেলবে এবং সর্বোচ্চ score Winner হবে।</p>
+                <div className="space-y-2">
+                  {(settingsForm.multiplayerProMatches || [{id:'mp_3',players:3,entryFee:20,prizeAmount:50,active:false,showOnHome:true,displayOrder:1},{id:'mp_5',players:5,entryFee:30,prizeAmount:80,active:false,showOnHome:true,displayOrder:2},{id:'mp_7',players:7,entryFee:60,prizeAmount:160,active:false,showOnHome:true,displayOrder:3},{id:'mp_10',players:10,entryFee:120,prizeAmount:300,active:false,showOnHome:true,displayOrder:4}]).map((m:any, i:number) => (
+                    <div key={m.id || i} className="grid grid-cols-2 gap-2 rounded-xl border border-indigo-900 bg-[#080d1b] p-2.5">
+                      <div className="col-span-2 flex items-center justify-between"><b className="text-xs text-white">{m.players} Players</b><label className="flex items-center gap-2 text-[10px] text-slate-300"><input type="checkbox" checked={m.active !== false} onChange={e=>{const rows=[...(settingsForm.multiplayerProMatches||[])]; rows[i]={...m,active:e.target.checked}; setSettingsForm({...settingsForm,multiplayerProMatches:rows});}} className="w-4 h-4 accent-cyan-500"/> Active</label></div>
+                      <div><label className="block text-[10px] text-slate-500 mb-1">Entry Fee ৳</label><input type="number" min="1" value={m.entryFee} onChange={e=>{const rows=[...(settingsForm.multiplayerProMatches||[])]; rows[i]={...m,entryFee:Number(e.target.value)}; setSettingsForm({...settingsForm,multiplayerProMatches:rows});}} className="w-full bg-[#0b1022] border border-indigo-800 rounded-xl px-3 py-2 text-xs text-white"/></div>
+                      <div><label className="block text-[10px] text-slate-500 mb-1">Winner Prize ৳</label><input type="number" min="1" value={m.prizeAmount} onChange={e=>{const rows=[...(settingsForm.multiplayerProMatches||[])]; rows[i]={...m,prizeAmount:Number(e.target.value)}; setSettingsForm({...settingsForm,multiplayerProMatches:rows});}} className="w-full bg-[#0b1022] border border-indigo-800 rounded-xl px-3 py-2 text-xs text-white"/></div>
+                      <label className="col-span-2 flex items-center gap-2 text-[10px] text-slate-300"><input type="checkbox" checked={m.showOnHome !== false} onChange={e=>{const rows=[...(settingsForm.multiplayerProMatches||[])]; rows[i]={...m,showOnHome:e.target.checked}; setSettingsForm({...settingsForm,multiplayerProMatches:rows});}} className="w-4 h-4 accent-amber-500"/> Home Screen-এ দেখান</label>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <h3 className="text-sm font-bold text-amber-400 border-b border-indigo-950 pb-2 pt-2">
                 রেফার বোনাস সেটিংস
               </h3>
               <p className="text-[11px] text-slate-400">সফল Referral-এ Bonus সরাসরি Referrer-এর Gaming Balance-এ যাবে।</p>
@@ -1415,9 +1461,9 @@ export const AdminPanel: React.FC = () => {
             </form>
           </div>
         )}
-      {selectedAdminTournament && <div className="fixed inset-0 z-[86] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"><div className="w-full max-w-lg max-h-[90vh] overflow-y-auto bg-[#0e1428] border border-indigo-800 rounded-2xl p-5 shadow-2xl"><div className="flex items-center justify-between gap-3"><div><h3 className="font-black text-white">🏆 {selectedAdminTournament.name}</h3><p className="text-xs text-slate-400 mt-1">Players: {selectedAdminTournament.playerCount}/{selectedAdminTournament.maxPlayers}</p></div><button onClick={()=>setSelectedAdminTournament(null)} className="p-2 text-slate-400"><X className="w-5 h-5"/></button></div>{selectedAdminTournament.status!=='ENDED' && selectedAdminTournament.full && <button onClick={()=>finalizeTournament(selectedAdminTournament.id)} className="mt-4 w-full bg-amber-500 text-slate-950 font-black py-2.5 rounded-xl text-xs">Tournament শেষ করুন → Prize Review</button>}{selectedAdminTournament.status==='ENDED' && <div className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200">Tournament শেষ। কোনো Prize Admin Approval ছাড়া Player balance-এ যোগ হবে না।</div>}<div className="mt-4 space-y-2">{(selectedAdminTournament.entries||[]).map((e:any)=>{const payout=(selectedAdminTournament.payouts||[]).find((p:any)=>String(p.userId)===String(e.userId)); const status=payout?.status||'NO_PRIZE'; const avatar=e.avatarUrl||e.profilePhoto||e.photoUrl||''; return <div key={e.userId} className="flex items-center gap-3 rounded-xl bg-[#0b1022] border border-indigo-900/60 p-2.5"><div className="h-10 w-10 rounded-full overflow-hidden bg-indigo-900 flex items-center justify-center text-sm font-black text-white shrink-0">{avatar?<img src={avatar} className="h-full w-full object-cover"/>:<span>{String(e.username||'P').slice(0,1).toUpperCase()}</span>}</div><div className="min-w-0 flex-1"><div className="text-xs font-black text-white truncate">#{e.rank} {e.username}</div><div className="text-[10px] text-slate-500">ID: {e.userId} • Score: {e.score}</div></div><div className="text-right shrink-0"><div className="text-xs font-black text-amber-300">৳{e.prize||0}</div>{selectedAdminTournament.status==='ENDED' && e.prize>0 && <div className="mt-1 flex gap-1">{status==='PENDING' ? <><button onClick={()=>approveTournamentPayouts(selectedAdminTournament.id,[e.userId])} className="rounded-lg bg-emerald-600 px-2 py-1 text-[9px] font-black text-white">Approve</button><button onClick={()=>holdTournamentPayout(selectedAdminTournament.id,e.userId)} className="rounded-lg bg-red-600/80 px-2 py-1 text-[9px] font-black text-white">Hold</button></> : <span className={`text-[9px] font-black ${status==='PAID'?'text-emerald-400':'text-red-300'}`}>{status==='PAID'?'PAID':'HELD'}</span>}</div>}</div></div>})}</div>{selectedAdminTournament.status==='ENDED' && (selectedAdminTournament.payouts||[]).some((p:any)=>p.status==='PENDING') && <button onClick={()=>approveTournamentPayouts(selectedAdminTournament.id)} className="mt-4 w-full bg-emerald-600 text-white font-black py-3 rounded-xl text-xs">সব বৈধ Prize Approve করুন</button>}</div></div>}
+      {selectedAdminTournament && <div className="fixed inset-0 z-[86] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"><div className="w-full max-w-lg max-h-[90vh] overflow-y-auto bg-[#0e1428] border border-indigo-800 rounded-2xl p-5 shadow-2xl"><div className="flex items-center justify-between gap-3"><div><h3 className="font-black text-white">🏆 {selectedAdminTournament.name}</h3><p className="text-xs text-slate-400 mt-1">Players: {selectedAdminTournament.playerCount}/{selectedAdminTournament.maxPlayers}</p></div><button onClick={()=>setSelectedAdminTournament(null)} className="p-2 text-slate-400"><X className="w-5 h-5"/></button></div>{selectedAdminTournament.status!=='ENDED' && ((selectedAdminTournament.endMode==='TIME' && Number(selectedAdminTournament.timeRemainingMs||1)<=0) || (selectedAdminTournament.endMode!=='TIME' && selectedAdminTournament.full)) && <button onClick={()=>finalizeTournament(selectedAdminTournament.id)} className="mt-4 w-full bg-amber-500 text-slate-950 font-black py-2.5 rounded-xl text-xs">Tournament শেষ করুন → Prize Review</button>}{selectedAdminTournament.status==='ENDED' && <div className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200">Tournament শেষ। কোনো Prize Admin Approval ছাড়া Player balance-এ যোগ হবে না।</div>}<div className="mt-4 space-y-2">{(selectedAdminTournament.entries||[]).map((e:any)=>{const payout=(selectedAdminTournament.payouts||[]).find((p:any)=>String(p.userId)===String(e.userId)); const status=payout?.status||'NO_PRIZE'; const avatar=e.avatarUrl||e.profilePhoto||e.photoUrl||''; return <div key={e.userId} className="flex items-center gap-3 rounded-xl bg-[#0b1022] border border-indigo-900/60 p-2.5"><div className="h-10 w-10 rounded-full overflow-hidden bg-indigo-900 flex items-center justify-center text-sm font-black text-white shrink-0">{avatar?<img src={avatar} className="h-full w-full object-cover"/>:<span>{String(e.username||'P').slice(0,1).toUpperCase()}</span>}</div><div className="min-w-0 flex-1"><div className="text-xs font-black text-white truncate">#{e.rank} {e.username}</div><div className="text-[10px] text-slate-500">ID: {e.userId} • Score: {e.score}</div></div><div className="text-right shrink-0"><div className="text-xs font-black text-amber-300">৳{e.prize||0}</div>{selectedAdminTournament.status==='ENDED' && e.prize>0 && <div className="mt-1 flex gap-1">{status==='PENDING' ? <><button onClick={()=>approveTournamentPayouts(selectedAdminTournament.id,[e.userId])} className="rounded-lg bg-emerald-600 px-2 py-1 text-[9px] font-black text-white">Approve</button><button onClick={()=>holdTournamentPayout(selectedAdminTournament.id,e.userId)} className="rounded-lg bg-red-600/80 px-2 py-1 text-[9px] font-black text-white">Hold</button></> : <span className={`text-[9px] font-black ${status==='PAID'?'text-emerald-400':'text-red-300'}`}>{status==='PAID'?'PAID':'HELD'}</span>}</div>}</div></div>})}</div>{selectedAdminTournament.status==='ENDED' && (selectedAdminTournament.payouts||[]).some((p:any)=>p.status==='PENDING') && <button onClick={()=>approveTournamentPayouts(selectedAdminTournament.id)} className="mt-4 w-full bg-emerald-600 text-white font-black py-3 rounded-xl text-xs">সব বৈধ Prize Approve করুন</button>}</div></div>}
 
-      {showTournamentModal && <div className="fixed inset-0 z-[85] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"><form onSubmit={saveTournament} className="w-full max-w-lg bg-[#0e1428] border border-indigo-800 rounded-2xl p-5 space-y-3 shadow-2xl max-h-[90vh] overflow-y-auto"><div className="flex items-center justify-between"><h3 className="font-black text-white">{editingTournament?'Tournament Edit':'নতুন Tournament'}</h3><button type="button" onClick={()=>setShowTournamentModal(false)} className="p-2 text-slate-400"><X className="w-5 h-5"/></button></div><input required value={tournamentForm.name} onChange={e=>setTournamentForm({...tournamentForm,name:e.target.value})} placeholder="Tournament Name" className="w-full bg-[#0b1022] border border-indigo-800 rounded-xl px-3 py-2 text-xs text-white"/><div className="grid grid-cols-2 gap-3"><input type="number" min="0" value={tournamentForm.entryFee} onChange={e=>setTournamentForm({...tournamentForm,entryFee:Number(e.target.value)})} placeholder="Entry Fee" className="bg-[#0b1022] border border-indigo-800 rounded-xl px-3 py-2 text-xs text-white"/><input type="number" min="2" value={tournamentForm.maxPlayers} onChange={e=>setTournamentForm({...tournamentForm,maxPlayers:Number(e.target.value)})} placeholder="Max Players" className="bg-[#0b1022] border border-indigo-800 rounded-xl px-3 py-2 text-xs text-white"/></div><input type="number" min="0" value={tournamentForm.prizePool} onChange={e=>setTournamentForm({...tournamentForm,prizePool:Number(e.target.value)})} placeholder="Prize Pool" className="w-full bg-[#0b1022] border border-indigo-800 rounded-xl px-3 py-2 text-xs text-white"/><div><div className="flex items-center justify-between"><label className="text-[11px] text-slate-400">Prize Distribution</label><button type="button" onClick={addTournamentPrize} disabled={(tournamentForm.prizes||[]).length>=Number(tournamentForm.maxPlayers||0)} className="text-[11px] font-black text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-lg px-2 py-1 disabled:opacity-40">+ Rank Prize</button></div><div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-1">{(tournamentForm.prizes||[]).map((v:number,i:number)=><div key={i} className="flex gap-1"><input type="number" min="0" value={v} onChange={e=>setTournamentForm({...tournamentForm,prizes:(tournamentForm.prizes||[]).map((x:number,j:number)=>j===i?Number(e.target.value):x)})} className="min-w-0 flex-1 bg-[#0b1022] border border-indigo-800 rounded-xl px-3 py-2 text-xs text-white" placeholder={`#${i+1}`}/><button type="button" onClick={()=>removeTournamentPrize(i)} disabled={(tournamentForm.prizes||[]).length<=1} className="px-2 rounded-xl border border-red-900/60 text-red-300 disabled:opacity-30">×</button></div>)}</div></div><label className="flex items-center gap-2 text-xs text-slate-200"><input type="checkbox" checked={tournamentForm.active!==false} onChange={e=>setTournamentForm({...tournamentForm,active:e.target.checked})}/> Active</label><label className="flex items-center gap-2 text-xs text-slate-200"><input type="checkbox" checked={tournamentForm.showOnHome!==false} onChange={e=>setTournamentForm({...tournamentForm,showOnHome:e.target.checked})}/> Home Page-এ দেখান</label><button className="w-full bg-amber-500 text-slate-950 font-black py-2.5 rounded-xl text-xs">{editingTournament?'Update Tournament':'Create Tournament'}</button></form></div>}
+      {showTournamentModal && <div className="fixed inset-0 z-[85] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"><form onSubmit={saveTournament} className="w-full max-w-lg bg-[#0e1428] border border-indigo-800 rounded-2xl p-5 space-y-3 shadow-2xl max-h-[90vh] overflow-y-auto"><div className="flex items-center justify-between"><h3 className="font-black text-white">{editingTournament?'Tournament Edit':'নতুন Tournament'}</h3><button type="button" onClick={()=>setShowTournamentModal(false)} className="p-2 text-slate-400"><X className="w-5 h-5"/></button></div><input required value={tournamentForm.name} onChange={e=>setTournamentForm({...tournamentForm,name:e.target.value})} placeholder="Tournament Name" className="w-full bg-[#0b1022] border border-indigo-800 rounded-xl px-3 py-2 text-xs text-white"/><div className="grid grid-cols-2 gap-3"><input type="number" min="0" value={tournamentForm.entryFee} onChange={e=>setTournamentForm({...tournamentForm,entryFee:Number(e.target.value)})} placeholder="Entry Fee" className="bg-[#0b1022] border border-indigo-800 rounded-xl px-3 py-2 text-xs text-white"/><input type="number" min="2" value={tournamentForm.maxPlayers} onChange={e=>setTournamentForm({...tournamentForm,maxPlayers:Number(e.target.value)})} placeholder="Max Players" className="bg-[#0b1022] border border-indigo-800 rounded-xl px-3 py-2 text-xs text-white"/></div><div className="grid grid-cols-2 gap-3"><div><label className="block text-[11px] text-slate-400 mb-1">Tournament শেষ হবে</label><select value={tournamentForm.endMode||'PLAYER_LIMIT'} onChange={e=>setTournamentForm({...tournamentForm,endMode:e.target.value})} className="w-full bg-[#0b1022] border border-indigo-800 rounded-xl px-3 py-2 text-xs text-white"><option value="PLAYER_LIMIT">Player সংখ্যা অনুযায়ী</option><option value="TIME">সময় অনুযায়ী</option></select></div>{(tournamentForm.endMode||'PLAYER_LIMIT')==='TIME' ? <div><label className="block text-[11px] text-slate-400 mb-1">Duration (মিনিট)</label><input type="number" min="1" value={tournamentForm.durationMinutes||''} onChange={e=>setTournamentForm({...tournamentForm,durationMinutes:Number(e.target.value)})} placeholder="যেমন 180 = 3 ঘণ্টা" className="w-full bg-[#0b1022] border border-indigo-800 rounded-xl px-3 py-2 text-xs text-white"/></div> : <div className="flex items-end text-[10px] text-slate-500 pb-2">Max Players পূর্ণ হলেই Tournament শেষ হবে</div>}</div><input type="number" min="0" value={tournamentForm.prizePool} onChange={e=>setTournamentForm({...tournamentForm,prizePool:Number(e.target.value)})} placeholder="Prize Pool" className="w-full bg-[#0b1022] border border-indigo-800 rounded-xl px-3 py-2 text-xs text-white"/><div><div className="flex items-center justify-between"><label className="text-[11px] text-slate-400">Prize Distribution</label><button type="button" onClick={addTournamentPrize} disabled={(tournamentForm.prizes||[]).length>=Number(tournamentForm.maxPlayers||0)} className="text-[11px] font-black text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-lg px-2 py-1 disabled:opacity-40">+ Rank Prize</button></div><div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-1">{(tournamentForm.prizes||[]).map((v:number,i:number)=><div key={i} className="flex gap-1"><input type="number" min="0" value={v} onChange={e=>setTournamentForm({...tournamentForm,prizes:(tournamentForm.prizes||[]).map((x:number,j:number)=>j===i?Number(e.target.value):x)})} className="min-w-0 flex-1 bg-[#0b1022] border border-indigo-800 rounded-xl px-3 py-2 text-xs text-white" placeholder={`#${i+1}`}/><button type="button" onClick={()=>removeTournamentPrize(i)} disabled={(tournamentForm.prizes||[]).length<=1} className="px-2 rounded-xl border border-red-900/60 text-red-300 disabled:opacity-30">×</button></div>)}</div></div><label className="flex items-center gap-2 text-xs text-slate-200"><input type="checkbox" checked={tournamentForm.active!==false} onChange={e=>setTournamentForm({...tournamentForm,active:e.target.checked})}/> Active</label><label className="flex items-center gap-2 text-xs text-slate-200"><input type="checkbox" checked={tournamentForm.showOnHome!==false} onChange={e=>setTournamentForm({...tournamentForm,showOnHome:e.target.checked})}/> Home Page-এ দেখান</label><button className="w-full bg-amber-500 text-slate-950 font-black py-2.5 rounded-xl text-xs">{editingTournament?'Update Tournament':'Create Tournament'}</button></form></div>}
 
       {showGameModal && (
         <div className="fixed inset-0 z-[80] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">

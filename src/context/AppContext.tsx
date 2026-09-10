@@ -11,7 +11,7 @@ import {
   PaymentSettings 
 } from '../types';
 const initialUser: User = { id: '', name: '', phone: '', isAdmin: false, ludoKingName: '', gamingBalance: 0, winningBalance: 0, matchesPlayed: 0, totalWinnings: 0, referralCode: '', joinedAt: '' };
-const initialPaymentSettings: PaymentSettings = { bkash: '', bkashAgent: '', nagad: '', rocket: '', upay: '', binanceUsdt: '', bkashAgentEnabled: true, binanceUsdtEnabled: true, depositBkashEnabled: true, depositBkashAgentEnabled: true, depositNagadEnabled: true, depositRocketEnabled: true, depositUpayEnabled: true, depositBinanceUsdtEnabled: true, withdrawBkashEnabled: true, withdrawNagadEnabled: true, withdrawRocketEnabled: true, withdrawUpayEnabled: true, withdrawBinanceUsdtEnabled: true, whatsappSupport: '', telegramLink: '', marqueeNotice: '', popupNoticeTitle: '', popupNoticeText: '' };
+const initialPaymentSettings: PaymentSettings = { bkash: '', bkashAgent: '', nagad: '', rocket: '', upay: '', binanceUsdt: '', bkashAgentEnabled: true, binanceUsdtEnabled: true, depositBkashEnabled: true, depositBkashAgentEnabled: true, depositNagadEnabled: true, depositRocketEnabled: true, depositUpayEnabled: true, depositBinanceUsdtEnabled: true, withdrawBkashEnabled: true, withdrawNagadEnabled: true, withdrawRocketEnabled: true, withdrawUpayEnabled: true, withdrawBinanceUsdtEnabled: true, whatsappSupport: '', telegramLink: '', marqueeNotice: '', popupNoticeTitle: '', popupNoticeText: '', proMatchFees: [20, 30, 60, 120, 250, 500], multiplayerProMatches: [{id:'mp_3',players:3,entryFee:20,prizeAmount:50,active:false,showOnHome:true,displayOrder:1},{id:'mp_5',players:5,entryFee:30,prizeAmount:80,active:false,showOnHome:true,displayOrder:2},{id:'mp_7',players:7,entryFee:60,prizeAmount:160,active:false,showOnHome:true,displayOrder:3},{id:'mp_10',players:10,entryFee:120,prizeAmount:300,active:false,showOnHome:true,displayOrder:4}] };
 import confetti from 'canvas-confetti';
 import { backendApi } from '../services/backendApi';
 
@@ -39,7 +39,7 @@ interface AppContextType {
   submitBlockPuzzleResult: (matchId: string, score: number, prizeAmount: number, image?: string) => Promise<{ success: boolean; message: string; match?: any }> ;
   refreshMatches: () => Promise<void>;
   isRefreshing: boolean;
-  startBlockPuzzleMatch: (entryFee: number, prize?: number) => Promise<{ success: boolean; message: string; matchId?: string; gameStartedAt?: string | null; startsAt?: string | null; gameSeed?: number | null }>;
+  startBlockPuzzleMatch: (entryFee: number, prize?: number, playerCount?: number) => Promise<{ success: boolean; message: string; matchId?: string; gameStartedAt?: string | null; startsAt?: string | null; gameSeed?: number | null; playerCount?: number }>;
   finishBlockPuzzleMatch: (matchId: string, entryFee: number, won: boolean, prize: number, score: number, isDraw?: boolean) => void;
   refundBlockPuzzleMatch: (matchId: string, entryFee: number, reason?: string) => Promise<{ success: boolean; message: string }>;
   getActiveBlockPuzzleMatch: () => Promise<any | null>;
@@ -69,6 +69,7 @@ interface AppContextType {
   rejectResultSubmission: (submissionId: string, reason?: string) => Promise<{ success: boolean; message: string }>;
   adjustUserBalance: (userId: string, balanceType: 'gaming' | 'winning', amount: number, isAddition: boolean, note?: string) => Promise<boolean>;
   toggleUserBan: (userId: string) => Promise<boolean>;
+  deleteUser: (userId: string) => Promise<{ success: boolean; message: string }>;
   resetUserPassword: (userId: string, newPassword: string) => Promise<{ success: boolean; message: string }>;
 }
 
@@ -292,13 +293,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch { return null; }
   };
 
-  const startBlockPuzzleMatch = async (entryFee: number, prize = 0): Promise<{ success: boolean; message: string; matchId?: string; gameStartedAt?: string | null; startsAt?: string | null; gameSeed?: number | null }> => {
+  const startBlockPuzzleMatch = async (entryFee: number, prize = 0, playerCount = 2): Promise<{ success: boolean; message: string; matchId?: string; gameStartedAt?: string | null; startsAt?: string | null; gameSeed?: number | null; playerCount?: number }> => {
     try {
-      const data = await backendApi.startBlockPuzzleMatch(entryFee, prize);
+      const data = await backendApi.startBlockPuzzleMatch(entryFee, prize, playerCount);
       applyApiUser(data.user);
       const tx = await backendApi.transactions();
       setTransactions(tx.transactions as Transaction[]);
-      return { success: true, message: 'ম্যাচ শুরু হয়েছে!', matchId: String(data.match.id), gameStartedAt: data.match.gameStartedAt || null, startsAt: data.match.startsAt || data.match.gameStartedAt || null, gameSeed: Number(data.match.gameSeed) || null };
+      return { success: true, message: 'ম্যাচ শুরু হয়েছে!', matchId: String(data.match.id), gameStartedAt: data.match.gameStartedAt || null, startsAt: data.match.startsAt || data.match.gameStartedAt || null, gameSeed: Number(data.match.gameSeed) || null, playerCount: Number(data.match.playerCount || playerCount) };
     } catch (e: any) {
       return { success: false, message: e?.message || 'ম্যাচ শুরু করা যায়নি।' };
     }
@@ -362,6 +363,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const rejectResultSubmission = async (submissionId:string,reason='ভুল বা নকল স্ক্রিনশট') => { try{const data=await backendApi.updateResult(submissionId,'REJECTED',reason);setResultSubmissions(prev=>prev.map(s=>s.id===submissionId?data.submission as ResultSubmission:s));return {success:true,message:'রেজাল্ট স্ক্রিনশট বাতিল করা হয়েছে।'};}catch(e:any){return {success:false,message:e?.message||'বাতিল করা যায়নি।'};} };
   const adjustUserBalance = async (userId:string,balanceType:'gaming'|'winning',amount:number,isAddition:boolean,note='Admin adjustment') => { try{const data=await backendApi.adjustBalance(userId,balanceType,amount,isAddition,note);const mapped=mapApiUser(data.user);setRegisteredUsers(prev=>prev.map(u=>u.id===mapped.id?mapped:u));if(user.id===mapped.id)setUser(mapped);return true;}catch(e){console.error(e);return false;} };
   const toggleUserBan = async (userId:string) => { const target=registeredUsers.find(u=>u.id===userId);if(!target)return false;try{const data=await backendApi.toggleBan(userId,!Boolean(target.isBanned));const mapped=mapApiUser(data.user);setRegisteredUsers(prev=>prev.map(u=>u.id===mapped.id?mapped:u));return true;}catch(e){console.error(e);return false;} };
+  const deleteUser = async (userId:string) => { try { await backendApi.deleteUser(userId); setRegisteredUsers(prev=>prev.filter(u=>u.id!==userId)); return {success:true,message:'ইউজার একাউন্ট সম্পূর্ণভাবে ডিলিট হয়েছে।'}; } catch(e:any) { console.error(e); return {success:false,message:e?.message||'ইউজার ডিলিট করা যায়নি।'}; } };
   const resetUserPassword = async (userId:string,newPassword:string) => { try{await backendApi.resetPassword(userId,newPassword);return {success:true,message:'ইউজারের পাসওয়ার্ড সফলভাবে রিসেট হয়েছে।'};}catch(e:any){return {success:false,message:e?.message||'পাসওয়ার্ড রিসেট ব্যর্থ হয়েছে।'};} };
   const updatePaymentSettings = async (newSettings:Partial<PaymentSettings>) => { try{const data=await backendApi.updateSettings(newSettings);setPaymentSettings({ ...(data.paymentSettings as PaymentSettings), referralEnabled: data.referralSettings?.enabled, referralBonusAmount: data.referralSettings?.bonusAmount, referralMinDeposit: data.referralSettings?.minDeposit, referralRequireFirstProMatch: data.referralSettings?.requireFirstProMatch });return true;}catch(e){console.error(e);return false;} };
 
@@ -420,6 +422,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         rejectResultSubmission,
         adjustUserBalance,
         toggleUserBan,
+        deleteUser,
         resetUserPassword,
       }}
     >

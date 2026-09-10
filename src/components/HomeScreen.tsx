@@ -62,6 +62,18 @@ export const HomeScreen: React.FC = () => {
         </div>
       </div>
 
+      {/* Admin-managed Multiplayer Pro Matches */}
+      {Array.isArray(paymentSettings.multiplayerProMatches) && paymentSettings.multiplayerProMatches.some((m:any)=>m.active!==false && m.showOnHome!==false) && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between pt-1"><div className="flex items-center gap-2"><Zap className="w-4 h-4 text-cyan-400"/><h3 className="text-sm font-black text-white">Multiplayer Pro Match</h3></div><span className="text-[10px] text-slate-500">Block Puzzle</span></div>
+          {paymentSettings.multiplayerProMatches.filter((m:any)=>m.active!==false && m.showOnHome!==false).sort((a:any,b:any)=>Number(a.displayOrder||0)-Number(b.displayOrder||0)).map((m:any)=>(
+            <div key={m.id} onClick={()=>{sessionStorage.setItem('skillz_multiplayer_pro_config', JSON.stringify(m)); setCurrentTab('block_puzzle');}} className="rounded-2xl border border-cyan-500/40 bg-gradient-to-r from-cyan-950/80 via-[#132348] to-indigo-950/90 p-4 cursor-pointer active:scale-[0.99] transition-transform shadow-xl">
+              <div className="flex items-center justify-between gap-3"><div><div className="text-[10px] font-black tracking-wider text-cyan-300">MULTIPLAYER PRO MATCH</div><h4 className="mt-1 text-lg font-black text-white">{m.name || `${m.players} Players Pro Match`}</h4><p className="mt-1 text-[11px] text-slate-400">{m.players} জন • Full হলে ম্যাচ শুরু হবে</p></div><div className="text-right shrink-0"><div className="text-[10px] text-slate-500">ENTRY</div><b className="text-base text-white">৳{Number(m.entryFee||0).toFixed(0)}</b><div className="text-[10px] text-amber-300">WIN ৳{Number(m.prizeAmount||0).toFixed(0)}</div></div></div>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Server-managed Tournaments */}
       {!tournamentLoading && tournaments.length > 0 && <div className="space-y-2">
         <div className="flex items-center justify-between pt-1"><div className="flex items-center gap-2"><Trophy className="w-4 h-4 text-amber-400"/><h3 className="text-sm font-black text-white">চলমান Tournament</h3></div><span className="text-[10px] text-slate-500">Block Puzzle</span></div>

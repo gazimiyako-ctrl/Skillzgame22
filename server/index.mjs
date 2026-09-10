@@ -181,6 +181,15 @@ app.patch('/api/admin/games/:id', auth, admin, async (req, res) => { const game=
 app.delete('/api/admin/games/:id', auth, admin, async (req, res) => { const games=req.db.games||[]; const game=games.find(g=>g.id===req.params.id); if(!game)return res.status(404).json({message:'Game not found.'}); if(game.gameType==='block_puzzle')return res.status(400).json({message:'Block Puzzle মূল গেমটি delete করা যাবে না। চাইলে Home থেকে hide/inactive করুন।'}); req.db.games=games.filter(g=>g.id!==req.params.id); await saveDb(req.db); res.json({ok:true}); });
 app.get('/api/admin/users', auth, admin, (req, res) => res.json({ users: req.db.users.map(publicUser) }));
 
+app.delete('/api/users/:id', auth, admin, async (req, res) => {
+  const u = req.db.users.find(x => x.id === req.params.id);
+  if (!u) return res.status(404).json({ message: 'User not found' });
+  if (u.isAdmin || u.id === req.user.id) return res.status(400).json({ message: 'Admin account cannot be deleted.' });
+  req.db.users = req.db.users.filter(x => x.id !== req.params.id);
+  await saveDb(req.db);
+  res.json({ ok: true });
+});
+
 app.patch('/api/users/:id/ban', auth, admin, async (req, res) => {
   const u = req.db.users.find(x => x.id === req.params.id);
   if (!u) return res.status(404).json({ message: 'User not found' });
@@ -231,12 +240,20 @@ const BP_GAME_MS = 3 * 60 * 1000;
 // Live game protocol: the HTTP API remains responsible for matchmaking/settlement;
 // the dedicated live server handles low-latency move/state messages.
 const BP_PROTOCOL_VERSION = 1;
+const DEFAULT_PRO_MATCH_FEES = [20, 30, 60, 120, 250, 500];
+const PRO_MATCH_PRIZES = [35, 50, 100, 200, 420, 850];
+function proMatchFees(db) {
+  const fees = Array.isArray(db.paymentSettings?.proMatchFees) ? db.paymentSettings.proMatchFees.map(Number).filter(n => Number.isFinite(n) && n > 0) : [];
+  return fees.length === DEFAULT_PRO_MATCH_FEES.length ? fees : DEFAULT_PRO_MATCH_FEES;
+}
 
 function blockPuzzlePublicMatch(session, db) {
   if (!session) return null;
   const opponent = session.opponentUserId ? (db.users || []).find(u => u.id === session.opponentUserId) : null;
+  const group = session.duelId ? (db.blockPuzzleMatches || []).filter(m => m.duelId === session.duelId && !m.tournamentId) : [session];
+  const participants = group.map(m => ({ userId:m.userId, name:m.userName, score:m.score ?? null, status:m.status, submitted: Boolean(m.submittedAt) }));
   return {
-    id: session.id, duelId: session.duelId || null, tournamentId: session.tournamentId || null, userId: session.userId, userName: session.userName,
+    id: session.id, duelId: session.duelId || null, tournamentId: session.tournamentId || null, userId: session.userId, userName: session.userName, playerCount: Number(session.playerCount || 2), playersJoined: participants.length, participants,
     entryFee: session.entryFee, prizeAmount: session.prizeAmount, status: session.status,
     createdAt: session.createdAt, pendingUntil: session.pendingUntil || null, matchedAt: session.matchedAt || null,
     liveStateVersion: BP_PROTOCOL_VERSION,
@@ -250,32 +267,34 @@ function blockPuzzlePublicMatch(session, db) {
 }
 
 async function settleBlockPuzzleDuel(db, duelId) {
-  const sessions = (db.blockPuzzleMatches || []).filter(m => m.duelId === duelId);
-  if (sessions.length !== 2) return false;
+  const sessions = (db.blockPuzzleMatches || []).filter(m => m.duelId === duelId && !m.tournamentId);
+  if (!sessions.length) return false;
+  const required = Math.max(2, Number(sessions[0].playerCount || 2));
+  if (sessions.length < required) return false;
   if (sessions.some(m => m.settledAt)) return true;
   if (sessions.some(m => m.status !== 'SUBMITTED')) return false;
-  const [a, b] = sessions;
-  const sa = Number(a.score || 0), sb = Number(b.score || 0);
-  let winnerId = null, outcome = 'DRAW';
-  if (sa > sb) { winnerId = a.userId; outcome = 'WON'; }
-  else if (sb > sa) { winnerId = b.userId; outcome = 'WON'; }
+  const ranked = sessions.slice().sort((a,b) => Number(b.score||0) - Number(a.score||0) || String(a.userId).localeCompare(String(b.userId)));
+  const topScore = Number(ranked[0]?.score || 0);
+  const winners = ranked.filter(m => Number(m.score||0) === topScore);
   const settled = now();
   for (const session of sessions) {
     session.status = 'COMPLETED';
     session.settledAt = settled;
-    session.winnerId = winnerId;
-    session.outcome = winnerId ? (session.userId === winnerId ? 'WON' : 'LOST') : 'DRAW';
-    session.opponentScore = session.userId === a.userId ? sb : sa;
-    session.opponentLinesCleared = session.userId === a.userId ? Number(b.linesCleared || 0) : Number(a.linesCleared || 0);
+    session.winnerId = winners.length === 1 ? winners[0].userId : null;
+    session.outcome = winners.length === 1 ? (session.userId === winners[0].userId ? 'WON' : 'LOST') : 'DRAW';
+    session.groupRank = ranked.findIndex(x => x.userId === session.userId) + 1;
   }
-  if (winnerId) {
-    const winner = db.users.find(u => u.id === winnerId);
-    const winningSession = sessions.find(session => session.userId === winnerId);
-    if (winner && winningSession) {
-      winner.winningBalance = money(Number(winner.winningBalance || 0) + Number(winningSession.prizeAmount || 0));
-      winner.totalWinnings = money(Number(winner.totalWinnings || 0) + Number(winningSession.prizeAmount || 0));
-      winner.matchesWon = Number(winner.matchesWon || 0) + 1;
-      db.transactions.unshift(makeTransaction(winner.id, 'match_win', Number(winningSession.prizeAmount || 0), 'Block Puzzle Win', `Score: ${Number(winningSession.score || 0)} • Automatic`, 'match', { matchId: duelId, gameType: 'block_puzzle' }));
+  if (winners.length === 1) {
+    const winningSession = winners[0];
+    const winner = db.users.find(u => u.id === winningSession.userId);
+    if (winner) {
+      const prize = money(Number(winningSession.prizeAmount || 0));
+      if (prize > 0) {
+        winner.winningBalance = money(Number(winner.winningBalance || 0) + prize);
+        winner.totalWinnings = money(Number(winner.totalWinnings || 0) + prize);
+        winner.matchesWon = Number(winner.matchesWon || 0) + 1;
+        db.transactions.unshift(makeTransaction(winner.id, 'match_win', prize, 'Multiplayer Pro Match Win', `Rank #1 • ${required} Players`, 'match', { matchId: duelId, gameType: 'block_puzzle', playerCount: required }));
+      }
     }
   } else {
     for (const session of sessions) {
@@ -283,7 +302,7 @@ async function settleBlockPuzzleDuel(db, duelId) {
       if (u && !session.refunded) {
         u.gamingBalance = money(Number(u.gamingBalance || 0) + Number(session.entryFee || 0));
         session.refunded = true;
-        db.transactions.unshift(makeTransaction(u.id, 'refund', Number(session.entryFee || 0), 'Block Puzzle Draw Refund', `Draw • Match #${duelId.slice(-6)}`, 'match', { matchId: duelId, gameType: 'block_puzzle' }));
+        db.transactions.unshift(makeTransaction(u.id, 'refund', Number(session.entryFee || 0), 'Multiplayer Pro Match Draw Refund', `Draw • ${required} Players`, 'match', { matchId: duelId, gameType: 'block_puzzle', playerCount: required }));
       }
     }
   }
@@ -336,7 +355,7 @@ async function expireBlockPuzzleMatches(db) {
             changed = true;
           }
         }
-        if (duelSessions.length === 2 && await settleBlockPuzzleDuel(db, session.duelId)) changed = true;
+        if (duelSessions.length >= Math.max(2, Number(session.playerCount || 2)) && await settleBlockPuzzleDuel(db, session.duelId)) changed = true;
       } else {
         session.status = 'PENDING';
         session.gameEndedAt = session.gameEndedAt || now();
@@ -370,24 +389,23 @@ async function expireBlockPuzzleMatches(db) {
   return changed;
 }
 
-function findJoinableBlockPuzzleMatch(db, session, entryFee, prizeAmount) {
-  // First priority: a currently running solo game. The new player joins its
-  // exact duel and shares its original game end time.
-  const live = db.blockPuzzleMatches.find(m =>
-    m.id !== session.id && m.status === 'PLAYING' && !m.duelId && !m.tournamentId &&
+function findJoinableBlockPuzzleMatch(db, session, entryFee, prizeAmount, playerCount) {
+  const required = Math.max(2, Number(playerCount || 2));
+  const candidates = (db.blockPuzzleMatches || []).filter(m =>
+    m.id !== session.id && !m.tournamentId && !m.refunded &&
     Number(m.entryFee) === entryFee && Number(m.prizeAmount) === prizeAmount &&
-    m.userId !== session.userId && m.gameStartedAt && Date.parse(m.gameStartedAt) + BP_GAME_MS > Date.now()
+    Math.max(2, Number(m.playerCount || 2)) === required && m.userId !== session.userId
   );
-  if (live) return { target: live, kind: 'LIVE' };
-
-  // Second priority: a player whose solo game already ended and is waiting
-  // for an opponent during the 3-hour pending window.
-  const pending = db.blockPuzzleMatches.find(m =>
-    m.id !== session.id && m.status === 'PENDING' && !m.duelId && !m.tournamentId && !m.refunded &&
-    Number(m.entryFee) === entryFee && Number(m.prizeAmount) === prizeAmount &&
-    m.userId !== session.userId && (!m.pendingUntil || Date.parse(m.pendingUntil) > Date.now())
-  );
-  return pending ? { target: pending, kind: 'PENDING' } : null;
+  // Prefer an existing group that is not full, then a fresh solo player.
+  const grouped = candidates.filter(m => m.duelId).sort((a,b)=>(Date.parse(a.createdAt||0)||0)-(Date.parse(b.createdAt||0)||0));
+  for (const candidate of grouped) {
+    const count = db.blockPuzzleMatches.filter(x => x.duelId === candidate.duelId && !x.refunded && x.status !== 'COMPLETED').length;
+    if (count < required) return { target: candidate, kind: 'GROUP', groupCount: count };
+  }
+  const live = candidates.find(m => !m.duelId && m.status === 'PLAYING' && m.gameStartedAt && Date.parse(m.gameStartedAt) + BP_GAME_MS > Date.now());
+  if (live) return { target: live, kind: 'LIVE', groupCount: 1 };
+  const pending = candidates.find(m => !m.duelId && m.status === 'PENDING' && (!m.pendingUntil || Date.parse(m.pendingUntil) > Date.now()));
+  return pending ? { target: pending, kind: 'PENDING', groupCount: 1 } : null;
 }
 
 
@@ -417,6 +435,24 @@ function ensureTournamentEntries(db, t) {
   return [...byUser.values()];
 }
 
+function tournamentEndMode(t) {
+  return String(t?.endMode || 'PLAYER_LIMIT').toUpperCase() === 'TIME' ? 'TIME' : 'PLAYER_LIMIT';
+}
+
+function tournamentHasExpired(t, at=Date.now()) {
+  return tournamentEndMode(t) === 'TIME' && t?.status === 'ACTIVE' && Number.isFinite(Date.parse(t.endsAt || '')) && Date.parse(t.endsAt) <= at;
+}
+
+async function autoFinalizeExpiredTournaments(db) {
+  let changed = false;
+  for (const t of (db.tournaments || [])) {
+    if (!tournamentHasExpired(t)) continue;
+    await finalizeTournamentInternal(db, t);
+    changed = true;
+  }
+  return changed;
+}
+
 function publicTournament(db, t, currentUserId=null) {
   if (!t) return null;
   const entries = ensureTournamentEntries(db, t).sort((a,b)=>Number(a.entryNumber||0)-Number(b.entryNumber||0));
@@ -424,12 +460,16 @@ function publicTournament(db, t, currentUserId=null) {
     .map((e,i)=>{ const u=(db.users||[]).find(x=>x.id===e.userId)||{}; return {rank:i+1,userId:e.userId,username:e.userName,avatarUrl:u.avatarUrl||u.profilePhoto||u.photoUrl||'',avatar:u.avatar||'',score:Number(e.bestScore||0),attempts:Number(e.attempts||0),entryNumber:Number(e.entryNumber||0),bestScoreAt:e.bestScoreAt||null,prize:Number(t.prizes?.[i]||0)}; });
   const joined=entries.some(e=>e.userId===currentUserId);
   const full=entries.length>=Number(t.maxPlayers||0);
-  return {...t, playerCount:entries.length, registeredPlayers:entries.length, full, joined, registrationClosed:full, entries:ranked};
+  const mode=tournamentEndMode(t);
+  const endsAt=t.endsAt || null;
+  const timeRemainingMs=mode==='TIME' && endsAt ? Math.max(0, Date.parse(endsAt)-Date.now()) : null;
+  return {...t, endMode:mode, playerCount:entries.length, registeredPlayers:entries.length, full, joined, registrationClosed:full || mode==='TIME' && t.status!=='ACTIVE', endsAt, timeRemainingMs, entries:ranked};
 }
 
 app.get('/api/tournaments', auth, async (req,res) => {
   try {
     const db=await loadDb();
+    if (await autoFinalizeExpiredTournaments(db)) await saveDb(db);
     const ts=(db.tournaments||[]).filter(t=>t.status==='ACTIVE' && t.showOnHome!==false).sort((a,b)=>Number(a.displayOrder||0)-Number(b.displayOrder||0));
     res.json({tournaments:ts.map(t=>publicTournament(db,t,req.user.id))});
   } catch(err){res.status(503).json({message:err?.message||'Tournament unavailable.'});}
@@ -437,12 +477,13 @@ app.get('/api/tournaments', auth, async (req,res) => {
 app.get('/api/tournaments/:id', auth, async (req,res) => {
   try {
     const db = await loadDb();
+    if (await autoFinalizeExpiredTournaments(db)) await saveDb(db);
     const t = (db.tournaments || []).find(x => x.id === req.params.id);
     if (!t) return res.status(404).json({ message: 'Tournament পাওয়া যায়নি।' });
     res.json({ tournament: publicTournament(db, t, req.user.id) });
   } catch (err) { res.status(503).json({ message: err?.message || 'Tournament unavailable.' }); }
 });
-app.get('/api/admin/tournaments', auth, admin, async (req,res) => { const db=req.db; res.json({tournaments:(db.tournaments||[]).map(t=>publicTournament(db,t)).sort((a,b)=>Date.parse(b.createdAt)-Date.parse(a.createdAt))}); });
+app.get('/api/admin/tournaments', auth, admin, async (req,res) => { const db=req.db; if (await autoFinalizeExpiredTournaments(db)) await saveDb(db); res.json({tournaments:(db.tournaments||[]).map(t=>publicTournament(db,t)).sort((a,b)=>Date.parse(b.createdAt)-Date.parse(a.createdAt))}); });
 app.post('/api/admin/tournaments', auth, admin, async (req,res) => {
   try {
     const b=req.body||{}; const name=safeText(b.name,100); const entryFee=money(Number(b.entryFee)); const maxPlayers=Math.floor(Number(b.maxPlayers)); const prizePool=money(Number(b.prizePool));
@@ -450,7 +491,14 @@ app.post('/api/admin/tournaments', auth, admin, async (req,res) => {
     const prizes=Array.isArray(b.prizes)?b.prizes.map(x=>money(Number(x))).filter(x=>Number.isFinite(x)&&x>=0):[];
     if(prizes.length > maxPlayers) throw Object.assign(new Error('Prize Distribution-এর Rank Max Players-এর বেশি হতে পারবে না।'),{statusCode:400});
     if(prizes.reduce((a,x)=>a+x,0)>prizePool) throw Object.assign(new Error('Prize Distribution-এর মোট টাকা Prize Pool-এর বেশি হতে পারবে না।'),{statusCode:400});
-    const t={id:id('tourn'),name,gameType:'block_puzzle',entryFee,maxPlayers,prizePool,prizes,status:b.active===false?'INACTIVE':'ACTIVE',showOnHome:b.showOnHome!==false,displayOrder:Number(b.displayOrder)||1,createdAt:now(),updatedAt:now(),finalEntries:null,payouts:[],payoutStatus:'NOT_READY',registrationClosed:false};
+    const endMode=String(b.endMode||'PLAYER_LIMIT').toUpperCase()==='TIME'?'TIME':'PLAYER_LIMIT';
+    const durationMinutes=Math.max(1,Math.floor(Number(b.durationMinutes||0)));
+    if(endMode==='TIME' && (!Number.isFinite(durationMinutes)||durationMinutes<1)) throw Object.assign(new Error('Time Mode-এর জন্য Duration অন্তত 1 মিনিট হতে হবে।'),{statusCode:400});
+    const createdAt=now();
+    const status=b.active===false?'INACTIVE':'ACTIVE';
+    const startedAt=status==='ACTIVE' ? createdAt : null;
+    const endsAt=endMode==='TIME' && startedAt ? new Date(Date.parse(startedAt)+durationMinutes*60000).toISOString() : null;
+    const t={id:id('tourn'),name,gameType:'block_puzzle',entryFee,maxPlayers,prizePool,prizes,status,endMode,durationMinutes:endMode==='TIME'?durationMinutes:null,startedAt,endsAt,showOnHome:b.showOnHome!==false,displayOrder:Number(b.displayOrder)||1,createdAt,updatedAt:createdAt,finalEntries:null,payouts:[],payoutStatus:'NOT_READY',registrationClosed:false};
     req.db.tournaments=[...(req.db.tournaments||[]),t]; await saveDb(req.db); res.status(201).json({tournament:publicTournament(req.db,t)});
   } catch(err){res.status(err.statusCode||400).json({message:err?.message||'Tournament তৈরি করা যায়নি।'});}
 });
@@ -462,9 +510,31 @@ app.patch('/api/admin/tournaments/:id', auth, admin, async (req,res) => {
   if(b.maxPlayers!==undefined){const n=Math.max(2,Math.floor(Number(b.maxPlayers))); if(n<currentEntries.length)return res.status(400).json({message:`Max Players ${currentEntries.length}-এর কম করা যাবে না।`}); t.maxPlayers=n;}
   if(b.prizePool!==undefined)t.prizePool=money(Number(b.prizePool));
   if(b.prizes!==undefined)t.prizes=Array.isArray(b.prizes)?b.prizes.map(x=>money(Number(x))).filter(x=>Number.isFinite(x)&&x>=0):[];
+  if(b.endMode!==undefined){
+    const mode=String(b.endMode).toUpperCase()==='TIME'?'TIME':'PLAYER_LIMIT';
+    t.endMode=mode;
+    if(mode==='TIME'){
+      const mins=Math.max(1,Math.floor(Number(b.durationMinutes||t.durationMinutes||0)));
+      if(!Number.isFinite(mins)||mins<1)return res.status(400).json({message:'Time Mode-এর জন্য Duration অন্তত 1 মিনিট হতে হবে।'});
+      t.durationMinutes=mins;
+      if(t.status!=='ENDED') t.endsAt=new Date(Date.parse(t.createdAt||now())+mins*60000).toISOString();
+    } else { t.durationMinutes=null; t.endsAt=null; }
+  } else if(b.durationMinutes!==undefined && tournamentEndMode(t)==='TIME'){
+    const mins=Math.max(1,Math.floor(Number(b.durationMinutes)));
+    if(!Number.isFinite(mins)||mins<1)return res.status(400).json({message:'Duration অন্তত 1 মিনিট হতে হবে।'});
+    t.durationMinutes=mins;
+    if(t.status!=='ENDED') t.endsAt=new Date(Date.parse(t.createdAt||now())+mins*60000).toISOString();
+  }
   if((t.prizes||[]).length > Number(t.maxPlayers||0))return res.status(400).json({message:'Prize Distribution-এর Rank Max Players-এর বেশি হতে পারবে না।'});
   if((t.prizes||[]).reduce((a,x)=>a+x,0)>Number(t.prizePool||0))return res.status(400).json({message:'Prize Distribution-এর মোট টাকা Prize Pool-এর বেশি হতে পারবে না।'});
-  if(b.status!==undefined && t.status!=='ENDED')t.status=String(b.status);
+  if(b.status!==undefined && t.status!=='ENDED'){
+    const nextStatus=String(b.status);
+    if(nextStatus==='ACTIVE' && t.status!=='ACTIVE' && tournamentEndMode(t)==='TIME'){
+      t.startedAt=now();
+      t.endsAt=new Date(Date.parse(t.startedAt)+Number(t.durationMinutes||0)*60000).toISOString();
+    }
+    t.status=nextStatus;
+  }
   if(b.showOnHome!==undefined)t.showOnHome=Boolean(b.showOnHome); if(b.displayOrder!==undefined)t.displayOrder=Number(b.displayOrder)||0;
   t.registrationClosed=currentEntries.length>=Number(t.maxPlayers||0); t.updatedAt=now(); await saveDb(req.db); res.json({tournament:publicTournament(req.db,t)});
 });
@@ -474,7 +544,9 @@ app.post('/api/tournaments/:id/join', auth, async (req,res) => {
   try {
     const result=await withDbLock(async()=>{
       const db=await loadDb(); const t=(db.tournaments||[]).find(x=>x.id===req.params.id);
-      if(!t||t.status!=='ACTIVE')throw Object.assign(new Error('Tournament এখন আর Active নেই।'),{statusCode:400});
+      if(!t)throw Object.assign(new Error('Tournament পাওয়া যায়নি।'),{statusCode:404});
+      if(tournamentHasExpired(t)) { await finalizeTournamentInternal(db,t); await saveDb(db); throw Object.assign(new Error('Tournament-এর নির্ধারিত সময় শেষ হয়ে গেছে।'),{statusCode:400}); }
+      if(t.status!=='ACTIVE')throw Object.assign(new Error('Tournament এখন আর Active নেই।'),{statusCode:400});
       const entries=ensureTournamentEntries(db,t);
       let entry=entries.find(e=>e.userId===req.user.id);
       if(!entry){
@@ -532,7 +604,7 @@ async function approveTournamentPayoutsInternal(db,t,userIds=null) {
 }
 
 app.post('/api/admin/tournaments/:id/finalize', auth, admin, async (req,res) => {
-  try { const result=await withDbLock(async()=>{ const db=await loadDb(); const t=db.tournaments.find(x=>x.id===req.params.id); if(!t)throw Object.assign(new Error('Tournament not found.'),{statusCode:404}); if(t.status==='ENDED')return {t,db,payouts:t.payouts||[]}; const entries=ensureTournamentEntries(db,t); if(entries.length<Number(t.maxPlayers))throw Object.assign(new Error('Tournament full হওয়ার আগে manual finalize করা যাবে না।'),{statusCode:400}); const payouts=await finalizeTournamentInternal(db,t); await saveDb(db); return {t,db,payouts}; }); res.json({tournament:publicTournament(result.db,result.t),payouts:result.payouts}); }
+  try { const result=await withDbLock(async()=>{ const db=await loadDb(); const t=db.tournaments.find(x=>x.id===req.params.id); if(!t)throw Object.assign(new Error('Tournament not found.'),{statusCode:404}); if(t.status==='ENDED')return {t,db,payouts:t.payouts||[]}; const entries=ensureTournamentEntries(db,t); if(tournamentEndMode(t)==='PLAYER_LIMIT' && entries.length<Number(t.maxPlayers))throw Object.assign(new Error('Player Limit Mode-এ Tournament full হওয়ার আগে manual finalize করা যাবে না।'),{statusCode:400}); if(tournamentEndMode(t)==='TIME' && !tournamentHasExpired(t))throw Object.assign(new Error('Time Mode-এর নির্ধারিত সময় শেষ হওয়ার আগে finalize করা যাবে না।'),{statusCode:400}); const payouts=await finalizeTournamentInternal(db,t); await saveDb(db); return {t,db,payouts}; }); res.json({tournament:publicTournament(result.db,result.t),payouts:result.payouts}); }
   catch(err){res.status(err.statusCode||503).json({message:err?.message||'Tournament finalize করা যায়নি।'});}
 });
 
@@ -579,17 +651,22 @@ app.post('/api/block-puzzle/matches/start', auth, async (req, res) => {
       const db = await loadDb();
       await expireBlockPuzzleMatches(db);
       const entryFee = money(Number(req.body?.entryFee));
-      const prizeAmount = money(Number(req.body?.prizeAmount));
-      if (!Number.isFinite(entryFee) || entryFee <= 0 || entryFee > 100000) throw Object.assign(new Error('Invalid Block Puzzle entry fee.'), { statusCode: 400 });
-      if (!Number.isFinite(prizeAmount) || prizeAmount < 0 || prizeAmount > 100000) throw Object.assign(new Error('Invalid Block Puzzle prize.'), { statusCode: 400 });
+      const requestedPlayerCount = Math.floor(Number(req.body?.playerCount || 2));
+      const playerCount = requestedPlayerCount === 3 || requestedPlayerCount === 5 || requestedPlayerCount === 7 || requestedPlayerCount === 10 ? requestedPlayerCount : 2;
+      if (!Number.isFinite(entryFee) || !Number.isInteger(entryFee) || entryFee <= 0) throw Object.assign(new Error('Invalid Block Puzzle entry fee.'), { statusCode: 400 });
+      const configuredFees = proMatchFees(db);
+      const requestedPrize = money(Math.max(0, Number(req.body?.prizeAmount) || 0));
+      const feeIndex = configuredFees.findIndex(fee => Math.abs(fee - entryFee) < 0.000001);
+      const prizeAmount = playerCount > 2 ? requestedPrize : (feeIndex >= 0 ? PRO_MATCH_PRIZES[feeIndex] : null);
+      if (prizeAmount == null || prizeAmount <= 0) throw Object.assign(new Error('এই Pro Match entry fee বর্তমানে উপলব্ধ নয়।'), { statusCode: 400 });
       if (Number(req.user.gamingBalance) < entryFee) throw Object.assign(new Error('অপর্যাপ্ত গেমিং ব্যালেন্স! দয়া করে ডিপোজিট করুন।'), { statusCode: 400 });
 
-      // Players may create unlimited paid Block Puzzle sessions. Every session gets
-      // its own match id and 3-minute clock, so an older pending/playing match never
-      // blocks a new one. A later player can still be paired with an eligible pending
-      // or currently-running session through findJoinableBlockPuzzleMatch().
+      // Pro Match is asynchronous: the player may play immediately after paying.
+      // The opponent can join later (up to 3 hours from entry) and play the same
+      // deterministic game seed against the stored score.
       const createdAt = now();
-      const startsAt = new Date(Date.now() + 3000).toISOString();
+      const gameStartedAt = createdAt;
+      const pendingUntil = new Date(Date.parse(createdAt) + BP_PENDING_MS).toISOString();
       const session = {
         id: id('bp'),
         gameSeed: crypto.randomInt(1, 2147483646),
@@ -597,8 +674,8 @@ app.post('/api/block-puzzle/matches/start', auth, async (req, res) => {
         liveState: null,
         liveUpdatedAt: null,
         userId: req.user.id, userName: req.user.name, userPhone: req.user.phone,
-        entryFee, prizeAmount, status: 'PLAYING', createdAt, startsAt, gameStartedAt: startsAt,
-        pendingUntil: new Date(Date.now() + BP_PENDING_MS).toISOString(), refunded: false
+        entryFee, prizeAmount, playerCount, status: playerCount > 2 ? 'PENDING' : 'PLAYING', createdAt, startsAt: gameStartedAt, gameStartedAt,
+        pendingUntil, refunded: false
       };
       req.user.gamingBalance = money(req.user.gamingBalance - entryFee);
       req.user.matchesPlayed = Number(req.user.matchesPlayed || 0) + 1;
@@ -606,32 +683,44 @@ app.post('/api/block-puzzle/matches/start', auth, async (req, res) => {
       db.blockPuzzleMatches = [session, ...(db.blockPuzzleMatches || [])];
       db.transactions.unshift(makeTransaction(req.user.id, 'match_loss', -entryFee, 'Block Puzzle Entry', `Block Puzzle • Match #${session.id.slice(-6)}`, 'match', { matchId: session.id, gameType: 'block_puzzle' }));
 
-      const join = findJoinableBlockPuzzleMatch(db, session, entryFee, prizeAmount);
+      const join = findJoinableBlockPuzzleMatch(db, session, entryFee, prizeAmount, playerCount);
       if (join) {
         const target = join.target;
-        const duelId = id('bpduel');
-        session.duelId = duelId;
+        const groupId = target.duelId || id('bpgroup');
+        const groupSessions = db.blockPuzzleMatches.filter(m => m.duelId === groupId && !m.refunded && m.status !== 'COMPLETED');
+        session.duelId = groupId;
         session.opponentUserId = target.userId;
         session.matchedAt = now();
         session.pendingUntil = target.pendingUntil || session.pendingUntil;
-        // Both players in a duel must receive the exact same deterministic
-        // block sequence. The first player's server-created seed is authoritative.
         session.gameSeed = Number(target.gameSeed) || session.gameSeed;
-        if (join.kind === 'LIVE') {
-          session.gameStartedAt = target.gameStartedAt;
-          session.startsAt = target.gameStartedAt;
-          target.duelId = duelId;
-          target.opponentUserId = session.userId;
-          target.matchedAt = session.matchedAt;
+        const allMembers = [...groupSessions, session];
+        const full = allMembers.length >= playerCount;
+        if (full) {
+          const sharedStart = now();
+          const mergedLive = { players: {}, updatedAt: sharedStart };
+          for (const member of allMembers) {
+            member.duelId = groupId;
+            member.playerCount = playerCount;
+            member.gameSeed = session.gameSeed;
+            member.status = 'PLAYING';
+            member.matchedAt = member.matchedAt || session.matchedAt;
+            member.gameStartedAt = sharedStart;
+            member.startsAt = sharedStart;
+            member.pendingUntil = member.pendingUntil || new Date(Date.now() + BP_PENDING_MS).toISOString();
+            mergedLive.players[member.userId] = { board: emptyBoard(), score: Number(member.score || 0), linesCleared: Number(member.linesCleared || 0), combo: 0, streak: 0, moveIndex: Number(member.moveIndex || 0) };
+          }
+          for (const member of allMembers) member.liveState = mergedLive;
         } else {
-          session.gameStartedAt = startsAt;
-          session.startsAt = startsAt;
-          target.duelId = duelId;
-          target.opponentUserId = session.userId;
-          target.matchedAt = session.matchedAt;
-          target.status = 'SUBMITTED';
-          target.submittedAt = target.submittedAt || now();
-          target.score = Number(target.score || 0);
+          // Keep every participant in the group waiting until the configured player count is reached.
+          for (const member of allMembers) {
+            member.duelId = groupId;
+            member.playerCount = playerCount;
+            member.status = 'PENDING';
+            member.matchedAt = member.matchedAt || session.matchedAt;
+            member.pendingUntil = member.pendingUntil || new Date(Date.now() + BP_PENDING_MS).toISOString();
+            member.gameSeed = session.gameSeed;
+            member.liveState = null;
+          }
         }
       }
       await saveDb(db);
@@ -668,7 +757,7 @@ app.get('/api/block-puzzle/matches/:id/status', auth, async (req, res) => {
       if (session.duelId) {
         const duelSessions = db.blockPuzzleMatches.filter(m => m.duelId === session.duelId);
         // If one player has already finished, keep waiting for the other score.
-        if (duelSessions.length === 2) {
+        if (duelSessions.length >= Math.max(2, Number(session.playerCount || 2))) {
           const deadline = Math.max(...duelSessions.map(m => Date.parse(m.gameStartedAt || '') || 0));
           if (deadline && deadline + BP_GAME_MS <= Date.now()) {
             for (const other of duelSessions) {
@@ -705,12 +794,14 @@ app.post('/api/block-puzzle/matches/:id/submit', auth, async (req, res) => {
         session.status = 'SUBMITTED';
         session.submittedAt = now();
         session.gameEndedAt = now();
-        // When a live duel has a server state, settlement uses the server-calculated
-        // score instead of trusting a client-supplied score.
-        const livePlayer = session.liveState?.players?.[req.user.id];
-        session.score = livePlayer ? Number(livePlayer.score || 0) : score;
-        session.linesCleared = livePlayer ? Number(livePlayer.linesCleared || 0) : linesCleared;
-        session.bestCombo = livePlayer ? Number(livePlayer.bestCombo || 0) : bestCombo;
+        // Pro Match is asynchronous: each player can complete their own
+        // 3-minute attempt before or after the opponent joins. Therefore the
+        // submitted score must come from that player's completed attempt; a
+        // live WebSocket state must never replace or reset an already-played
+        // score when the opponent joins later.
+        session.score = score;
+        session.linesCleared = linesCleared;
+        session.bestCombo = bestCombo;
         if (session.tournamentId) {
           session.status = 'COMPLETED';
           session.outcome = 'TOURNAMENT';
@@ -1097,6 +1188,18 @@ app.patch('/api/settings', auth, admin, async (req, res) => {
   const b = req.body || {};
   const paymentPatch = {};
   for (const key of ['bkash','bkashAgent','nagad','rocket','upay','binanceUsdt','bkashAgentEnabled','binanceUsdtEnabled','depositBkashEnabled','depositBkashAgentEnabled','depositNagadEnabled','depositRocketEnabled','depositUpayEnabled','depositBinanceUsdtEnabled','withdrawBkashEnabled','withdrawNagadEnabled','withdrawRocketEnabled','withdrawUpayEnabled','withdrawBinanceUsdtEnabled','whatsappSupport','telegramLink','marqueeNotice','popupNoticeTitle','popupNoticeText']) { if (b[key] !== undefined) paymentPatch[key] = typeof b[key] === 'string' ? safeText(b[key], 5000) : Boolean(b[key]); }
+    if (b.multiplayerProMatches !== undefined) {
+    if (!Array.isArray(b.multiplayerProMatches)) return res.status(400).json({message:'Multiplayer Pro Match settings invalid.'});
+    const allowed = new Set([3,5,7,10]);
+    const rows = b.multiplayerProMatches.map((x,i)=>({
+      id: safeText(x?.id || `mp_${x?.players || i}`, 40), players: Math.floor(Number(x?.players)),
+      entryFee: money(Math.max(0, Number(x?.entryFee)||0)), prizeAmount: money(Math.max(0, Number(x?.prizeAmount)||0)),
+      active: Boolean(x?.active), showOnHome: x?.showOnHome !== false, displayOrder: Number.isFinite(Number(x?.displayOrder)) ? Number(x.displayOrder) : i+1, name: safeText(x?.name || `Multiplayer Pro Match • ${Number(x?.players)} Players`, 100)
+    }));
+    if (rows.length > 4 || rows.some(x=>!allowed.has(x.players)||x.entryFee<=0||x.prizeAmount<=0) || new Set(rows.map(x=>x.players)).size !== rows.length) return res.status(400).json({message:'Multiplayer Pro Match-এ শুধু 3, 5, 7, 10 player option এবং positive entry/prize দিন।'});
+    paymentPatch.multiplayerProMatches = rows.sort((a,b)=>a.displayOrder-b.displayOrder);
+  }
+if (b.proMatchFees !== undefined) { const fees = Array.isArray(b.proMatchFees) ? b.proMatchFees.map(Number) : []; if (fees.length !== 6 || fees.some(n => !Number.isFinite(n) || n <= 0) || new Set(fees.map(n => n.toFixed(2))).size !== 6) return res.status(400).json({ message: 'Pro Match entry fee অবশ্যই ৬টি আলাদা positive amount হতে হবে।' }); paymentPatch.proMatchFees = fees.map(n => money(n)); }
   req.db.paymentSettings = { ...req.db.paymentSettings, ...paymentPatch };
   req.db.referralSettings = { ...referralSettings(req.db), enabled: b.referralEnabled !== undefined ? Boolean(b.referralEnabled) : referralSettings(req.db).enabled, bonusAmount: b.referralBonusAmount !== undefined ? money(Math.max(0, Number(b.referralBonusAmount) || 0)) : referralSettings(req.db).bonusAmount, minDeposit: b.referralMinDeposit !== undefined ? money(Math.max(0, Number(b.referralMinDeposit) || 0)) : referralSettings(req.db).minDeposit, requireFirstProMatch: b.referralRequireFirstProMatch !== undefined ? Boolean(b.referralRequireFirstProMatch) : referralSettings(req.db).requireFirstProMatch };
   await saveDb(req.db); res.json({ paymentSettings: req.db.paymentSettings, referralSettings: referralSettings(req.db) });
@@ -1194,4 +1297,14 @@ app.post('/api/arcade/matches/:id/finish', auth, async (req,res)=>{
   } catch(e) { res.status(e?.statusCode || 500).json({message:e?.message || 'Could not finish match.'}); }
 });
 export default app;
-if (process.env.VERCEL !== '1' && process.env.LIVE_SERVER !== '1') app.listen(PORT, () => console.log(`Skillzgame backend listening on http://localhost:${PORT}`));
+if (process.env.VERCEL !== '1' && process.env.LIVE_SERVER !== '1') {
+  // Background safety net for Time Mode tournaments. Requests also trigger
+  // auto-finalization, so this does not change Player Limit Mode behavior.
+  setInterval(async () => {
+    try {
+      const db = await loadDb();
+      if (await autoFinalizeExpiredTournaments(db)) await saveDb(db);
+    } catch (err) { console.error('Tournament auto-finalize check failed:', err?.message || err); }
+  }, 15000);
+  app.listen(PORT, () => console.log(`Skillzgame backend listening on http://localhost:${PORT}`));
+}

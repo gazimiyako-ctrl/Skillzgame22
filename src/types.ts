@@ -284,5 +284,7 @@ export interface PaymentSettings {
   withdrawRocketEnabled?: boolean;
   withdrawUpayEnabled?: boolean;
   withdrawBinanceUsdtEnabled?: boolean;
+  proMatchFees?: number[];
+  multiplayerProMatches?: { id: string; players: number; entryFee: number; prizeAmount: number; active: boolean; showOnHome: boolean; displayOrder: number; name?: string }[];
 }
 
